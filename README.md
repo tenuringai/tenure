@@ -15,7 +15,7 @@
 
 ---
 
-A compiler that turns SKILL.md files into crash-proof Temporal workflows
+Run your skill on temporal:
 
 ```bash
 npx tenure run ./your-skill/SKILL.md
