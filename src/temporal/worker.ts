@@ -1,24 +1,31 @@
 import { Worker, NativeConnection } from '@temporalio/worker';
-import * as activities from './activities/execute-tool';
+import * as executeToolActivities from './activities/execute-tool';
+import * as skillStepActivity from '../compiler/skill-step-activity';
+import * as thinkingActivity from '../compiler/thinking-activity';
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? 'localhost:7233';
-const TASK_QUEUE = 'tenure-task-queue';
+const TASK_QUEUE = process.env.TENURE_TASK_QUEUE ?? 'tenure-task-queue';
 
 /**
  * Standalone Temporal Worker for Tenure.
  *
- * For production use, call tenureConnect() instead — it creates the Worker after
- * registering all tools in the tool registry so the dispatchToolActivity can find them.
+ * Registers two workflow types and their activities:
  *
- * This standalone worker is for development and testing purposes.
- * It registers the dispatchToolActivity but without any tools pre-registered,
- * so tool calls will fail unless tools are registered separately.
+ * 1. agentSessionWorkflow — original OpenClaw adapter workflow.
+ *    Kept for backward compat with existing sessions and the demo proof.
  *
- * The Worker has two registrations:
- * - workflowsPath: points to the compiled Workflow file, which runs in an isolated
- *   V8 sandbox via Node worker_threads. No Node APIs (fs, net, crypto) available inside.
- * - activities: registered directly in the main process with full Node API access.
- *   This is where the original tool.execute functions are called.
+ * 2. skillExecutionWorkflow — the SKILL.md compiler's output.
+ *    Generic, data-driven workflow that executes any SkillPlan.
+ *    Dispatches tool_call steps via executeSkillStep and thinking steps
+ *    via executeThinkingStep.
+ *
+ * The Worker's workflowsPath must include both workflow files.
+ * We use the bundleWorkflowCode approach with multiple workflow paths.
+ *
+ * Activity registrations:
+ * - dispatchToolActivity (OpenClaw adapter)
+ * - executeSkillStep (generic tool dispatch for compiler)
+ * - executeThinkingStep (OpenAI LLM dispatch for thinking steps)
  */
 async function runWorker(): Promise<void> {
   const connection = await NativeConnection.connect({
@@ -29,16 +36,22 @@ async function runWorker(): Promise<void> {
     connection,
     namespace: 'default',
     taskQueue: TASK_QUEUE,
-    // Workflows run in an isolated sandbox — referenced by file path, not imported.
-    workflowsPath: require.resolve('./workflows/agent-session'),
-    // Activities run in the main process — imported and passed as an object.
-    activities,
+    // workflowsPath bundles only one entry point.
+    // The skill-execution workflow imports workflow-builder, which uses proxyActivities.
+    // We use the combined entry — both workflows re-exported from one file.
+    workflowsPath: require.resolve('./workflows/all-workflows'),
+    activities: {
+      ...executeToolActivities,
+      ...skillStepActivity,
+      ...thinkingActivity,
+    },
   });
 
   console.log(`[Worker] Tenure Worker started`);
   console.log(`[Worker] Temporal address: ${TEMPORAL_ADDRESS}`);
   console.log(`[Worker] Task queue: ${TASK_QUEUE}`);
-  console.log(`[Worker] Activity: dispatchToolActivity (tool registry empty — use tenureConnect() for production)`);
+  console.log(`[Worker] Workflows: agentSessionWorkflow, skillExecutionWorkflow`);
+  console.log(`[Worker] Activities: dispatchToolActivity, executeSkillStep, executeThinkingStep`);
   console.log(`[Worker] Polling for tasks... (Ctrl+C to stop)`);
 
   await worker.run();

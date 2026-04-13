@@ -15,7 +15,18 @@ import type { TaxonomyEntry } from './types';
  */
 
 // Resolved from dist/src/router/ → project root → taxonomy/skills.json
-const TAXONOMY_PATH = path.join(__dirname, '..', '..', '..', 'taxonomy', 'skills.json');
+// When running via vitest (no compilation), __dirname is src/router/, so we try
+// both paths and use whichever exists.
+const TAXONOMY_PATH = (() => {
+  const fromDist = path.join(__dirname, '..', '..', '..', 'taxonomy', 'skills.json');
+  const fromSrc = path.join(__dirname, '..', '..', 'taxonomy', 'skills.json');
+  try {
+    require.resolve(fromDist);
+    return fromDist;
+  } catch {
+    return fromSrc;
+  }
+})();
 
 /** Normalize a tool name for consistent lookup: lowercase, replace spaces/underscores with hyphens. */
 export function normalizeName(name: string): string {
