@@ -324,6 +324,69 @@ Questions to answer:
 - what additional state must Tenure capture at the execution boundary chosen by the router?
 - where must the authoritative checkpoint live in Temporal history?
 
+#### Session 1 Checklist
+
+1. Prepare the research workspace.
+   Confirm `openclaw/`, `temporal-ai-agent/`, `zeitlich/`, `papers/`, and `community/` are present in `~/tenure-research`.
+
+2. Open the first-pass OpenClaw files.
+   Start with the current equivalents of:
+   - `openclaw/src/agents/pi-embedded-runner/run.ts`
+   - `openclaw/src/agents/pi-embedded-subscribe/handlers/tools.ts`
+   - `openclaw/src/node-host/invoke.ts`
+   If those exact paths have moved, find the current files that own agent-loop execution, tool dispatch, and privileged local execution.
+
+3. Draw the minimal execution boundary.
+   Trace one end-to-end path:
+   - user input received
+   - model/tool decision emitted
+   - tool execution started
+   - tool result returned
+   - result delivered back into the next reasoning step
+
+4. Run the read-proof pass first.
+   Pick one idempotent read-shaped tool path and answer:
+   - where is the call issued?
+   - what is persisted before execution?
+   - what is still only in memory?
+   - if the Worker dies here, can replay reconstruct the step without touching side effects?
+
+5. Run the deterministic write-proof pass second.
+   Model a file-write-shaped execution and identify the critical kill point:
+   - after the write completes
+   - before the result is delivered to the next reasoning step
+   Capture what Tenure would need so replay returns the cached execution result instead of rewriting the file.
+
+6. Capture the persistence-gap record for every step you inspect.
+   For each candidate crash point, write down:
+   - what OpenClaw persisted
+   - why that persisted state is insufficient
+   - what remained only in memory
+   - what Tenure checkpoint data would be required
+   - which Temporal primitive should own the step
+
+7. Record non-determinism and shared-ownership risks immediately.
+   Flag any behavior that would break replay or blur the boundary, especially:
+   - random values generated in workflow-owned logic
+   - clock/time reads inside replay-sensitive logic
+   - execution state that only OpenClaw can reconstruct
+   - any path where a tool call could bypass SER
+
+8. Keep the session narrow.
+   Do not broaden into marketplace, hosted cloud, capability plane, or the full top-30 taxonomy. Session 1 is only about adapter correctness and the first two proofs in the ladder.
+
+9. End the session only when these outputs exist.
+   You should leave Session 1 with:
+   - one written read-proof hypothesis
+   - one written deterministic write-proof hypothesis
+   - a list of inspected crash points with persistence-gap notes
+   - a short blocker list, if any
+   - a clear statement of where the authoritative checkpoint must live in Temporal history
+
+10. Use this done definition.
+   Session 1 is complete when you can say:
+   "I know which OpenClaw state is insufficient, which execution boundary Tenure must own, and what minimal checkpoint is required for read replay and no-duplicate file write replay."
+
 ### Session 2: Crash Recovery Matrix
 
 Goal:
@@ -331,12 +394,143 @@ Goal:
 - expand from the initial proof into a full crash-point map
 - record where OpenClaw persistence breaks down and what the adapter must own
 
+#### Session 2 Checklist
+
+1. Start from the Session 1 boundary notes.
+   Do not restart from scratch. Use the read-proof and deterministic write-proof findings as the baseline for the matrix.
+
+2. Enumerate the crash-point categories before filling entries.
+   Cover at least:
+   - mid-LLM inference
+   - decision emitted, execution not started
+   - mid-tool execution
+   - tool complete, result not delivered
+   - compaction
+   - SKILL.md loading
+   - cron trigger processing
+   - multi-agent communication
+   - Gateway reconnect
+   - sandbox/container execution
+
+3. Split sub-variants when recovery semantics differ.
+   If "mid-tool execution" behaves differently for file write, API call, browser session, or sandbox execution, break them into separate entries instead of forcing them into one generic row.
+
+4. Fill the matrix through the persistence-gap lens.
+   For every entry, capture:
+   - what OpenClaw persisted
+   - why that persisted state is insufficient
+   - what remained only in memory
+   - what Tenure checkpoint data would be required
+   - which Temporal primitive should own the step
+
+5. Attach real code evidence.
+   Every entry should point to concrete OpenClaw source files and, where possible, the exact function or logical execution point involved.
+
+6. Attach proof logic, not just prose.
+   Every entry should include a candidate test case with:
+   - setup
+   - crash point
+   - expected replay behavior
+   - no-duplicate or continuity assertion
+
+7. Cross-reference security and issue evidence where it matters.
+   For each serious crash point, ask:
+   - does a paper cover a related vulnerability?
+   - does an issue or community report confirm the persistence/restart problem?
+
+8. Flag boundary-breaking paths separately.
+   If any path appears to:
+   - generate replay-sensitive randomness in the wrong place
+   - read time in replay-sensitive logic
+   - require OpenClaw-only reconstruction
+   - bypass SER
+   mark it as a blocker candidate, not just another row.
+
+9. Keep the artifact useful for code generation later.
+   Write entries so they can directly feed:
+   - crash-recovery tests
+   - adapter checkpoint requirements
+   - code comments about non-determinism risk
+
+10. Use this done definition.
+   Session 2 is complete when you have a 15–25 entry crash matrix that explains not just where a crash can happen, but why OpenClaw cannot recover it alone and what Tenure must own instead.
+
 ### Session 3: Cron Durability Proof
 
 Goal:
 
 - model the cron-triggered proof with Temporal Schedule
 - define the certification test shape and public demo steps
+
+#### Session 3 Checklist
+
+1. Treat cron as the canonical public proof, not a side example.
+   This session exists to turn the architecture into something the OpenClaw community can believe quickly.
+
+2. Define the native OpenClaw failure first.
+   Write down:
+   - how OpenClaw cron works today
+   - what state disappears when the process dies
+   - why missed triggers are not authoritatively recovered
+
+3. Define the Temporal replacement path.
+   Specify the intended model:
+   - Temporal Schedule owns trigger timing
+   - Worker process may die
+   - schedule survives independently
+   - catch-up behavior is determined by policy, not luck
+
+4. Write the canonical demo sequence exactly.
+   Include:
+   - append one timestamped line to `log.txt` every 60 seconds
+   - run 3 cycles
+   - kill Worker
+   - miss 2 cycles
+   - restart Worker
+   - verify catch-up
+   - verify no duplicate lines
+
+5. Decide what must be asserted mechanically.
+   The proof should verify:
+   - expected line count
+   - correct sequence numbers
+   - correct timestamps or interval markers
+   - no duplicated lines
+   - no missing lines caused by Worker death
+
+6. Define the certification shape.
+   Turn the demo into a repeatable test by specifying:
+   - setup fixture
+   - crash trigger
+   - restart step
+   - assertions
+   - pass/fail conditions
+
+7. Make the public proof legible.
+   Write the explanation in a way that can later become:
+   - README proof section
+   - demo narration
+   - Issue `#10164` comment
+
+8. Keep the proof tied to the wedge.
+   Do not broaden this session into:
+   - full marketplace claims
+   - hosted dashboard UX
+   - broad lifecycle features
+   - full certification suite design
+   Focus only on cron durability as the strongest public answer to the founder pain.
+
+9. Record the exact source of truth.
+   End the session with a clear statement that:
+   - trigger timing is owned by Temporal Schedule
+   - execution truth is owned by Temporal history
+   - OpenClaw's own session files are not the recovery authority
+
+10. Use this done definition.
+   Session 3 is complete when you can describe one cron durability test that is simultaneously:
+   - an engineering proof
+   - a certification case
+   - a believable public demo
 
 ### Session 4: Skill Durability Mapping
 
