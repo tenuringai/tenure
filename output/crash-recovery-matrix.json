@@ -1,0 +1,922 @@
+[
+  {
+    "crash_point_id": "CP-001",
+    "crash_point_name": "Mid-LLM inference",
+    "openclaw_component": "Agent Runtime -> LLM Streaming",
+    "source_files": [
+      "src/agents/pi-embedded-runner/run/attempt.ts",
+      "src/agents/pi-embedded-runner/run.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl",
+      "User message that triggered this turn"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Streaming response buffer is in-process memory only",
+      "Partial assistant message is never written to transcript until turn completes",
+      "No checkpoint of inference progress exists"
+    ],
+    "state_in_memory_only": [
+      "Streaming response chunks",
+      "Partial assistant message",
+      "Accumulated usage/token counters in accumulatedReplayState"
+    ],
+    "tenure_checkpoint_required": [
+      "None — inference is owned by OpenClaw, not Tenure",
+      "Tenure only activates when the LLM emits a tool_use decision"
+    ],
+    "temporal_primitive": "N/A — outside Tenure boundary",
+    "replay_safe": true,
+    "replay_safe_reason": "No side effects during inference. Restart re-infers from scratch. The LLM may produce a different response, but no external state was mutated.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "SIGKILL during LLM streaming, verify restart produces a valid new response",
+      "setup": "Start agent turn with a prompt that triggers LLM inference; SIGKILL during streaming",
+      "assertion": "On restart, agent starts a new turn from the last persisted transcript state; no side effects from the interrupted inference"
+    },
+    "paper_references": [],
+    "community_references": [],
+    "severity": "low"
+  },
+  {
+    "crash_point_id": "CP-002",
+    "crash_point_name": "Tool decision emitted, execution not started",
+    "openclaw_component": "Agent Runtime -> Tool Dispatch",
+    "source_files": [
+      "src/agents/pi-embedded-runner/run/attempt.ts",
+      "src/agents/tools/common.ts",
+      "src/agents/pi-embedded-runner/run.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries including the assistant message with tool_use block"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "The tool_use decision may be in the streaming buffer but not yet flushed to .jsonl",
+      "Even if flushed, the transcript records intent, not execution state",
+      "On restart, the LLM may re-infer and choose a different tool or different parameters"
+    ],
+    "state_in_memory_only": [
+      "Pending tool dispatch state",
+      "Tool call ID (crypto.randomUUID or randomBytes-derived)",
+      "Parsed tool parameters"
+    ],
+    "tenure_checkpoint_required": [
+      "Tool call ID (deterministic, from workflow state)",
+      "Tool name",
+      "Serialized parameters",
+      "Execution type classification from SER router"
+    ],
+    "temporal_primitive": "Workflow decision point (pre-Activity scheduling)",
+    "replay_safe": false,
+    "replay_safe_reason": "Tool call IDs are generated with crypto.randomUUID() (src/agents/tools/agent-step.ts) or randomBytes (src/agents/pi-embedded-runner/run.ts:1772-1778). On replay, different IDs would be generated, breaking idempotency dedup.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "SIGKILL after tool_use decision but before dispatch; verify deterministic replay selects same tool",
+      "setup": "Workflow receives tool_use from LLM, schedules Activity; SIGKILL before Activity starts",
+      "assertion": "On replay, workflow re-schedules the same Activity with same parameters; no side effects from the gap"
+    },
+    "paper_references": ["[TAMU-190]"],
+    "community_references": [],
+    "severity": "medium"
+  },
+  {
+    "crash_point_id": "CP-003",
+    "crash_point_name": "Mid-tool execution — idempotent read (web search, file read, grep)",
+    "openclaw_component": "Agent Runtime -> Tool Execution -> Read Path",
+    "source_files": [
+      "src/agents/tools/web-search.ts",
+      "src/agents/tools/web-fetch.ts",
+      "src/agents/pi-tools.read.ts",
+      "src/web-search/runtime.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "In-flight read result exists only in process memory",
+      "web-fetch FETCH_CACHE is an in-memory Map (src/agents/tools/web-fetch.ts)",
+      "No checkpoint of partial or complete read results"
+    ],
+    "state_in_memory_only": [
+      "HTTP response buffer",
+      "Parsed search results",
+      "In-memory cache entries with Date.now()-based TTL"
+    ],
+    "tenure_checkpoint_required": [
+      "Tool call ID",
+      "Tool name and parameters",
+      "Serialized read result (Activity completion in Temporal history)"
+    ],
+    "temporal_primitive": "Activity (cached, retry-friendly)",
+    "replay_safe": true,
+    "replay_safe_reason": "Reads are idempotent. Re-execution is safe but wasteful. Temporal Activity caching eliminates the re-execution entirely — replay returns cached result from Event History.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Web search Activity completes, Worker SIGKILL before result delivery, replay returns cached result",
+      "setup": "Execute web_search Activity; SIGKILL Worker after Activity completion recorded in Temporal",
+      "assertion": "No second HTTP request; cached result returned on replay; workflow continues"
+    },
+    "paper_references": [],
+    "community_references": [],
+    "severity": "low"
+  },
+  {
+    "crash_point_id": "CP-004",
+    "crash_point_name": "Mid-tool execution — file write (fs.writeFile, file create, file edit)",
+    "openclaw_component": "Agent Runtime -> Tool Execution -> Node Host -> File System",
+    "source_files": [
+      "src/node-host/invoke.ts",
+      "src/node-host/invoke-system-run.ts",
+      "src/agents/pi-embedded-runner/wait-for-idle-before-flush.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl",
+      "The file itself may be partially or fully written to disk"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "File write may have completed but tool result is not yet in .jsonl",
+      "No record of whether the write succeeded, failed, or partially completed",
+      "sendInvokeResult errors are ignored (best-effort delivery to gateway)",
+      "On restart, no mechanism to detect the write already happened"
+    ],
+    "state_in_memory_only": [
+      "child_process.spawn output buffers (src/node-host/invoke.ts)",
+      "Completed write result pending delivery",
+      "cachedWindowsConsoleEncoding"
+    ],
+    "tenure_checkpoint_required": [
+      "Tool call ID",
+      "File path + content hash (idempotency key)",
+      "Serialized write result",
+      "Pre-write file state for compensation (revert)"
+    ],
+    "temporal_primitive": "Activity (idempotency key)",
+    "replay_safe": true,
+    "replay_safe_reason": "With Temporal: Activity result in Event History prevents re-execution. Idempotency key (file_path + content_hash) guards against duplicate writes even if Activity is re-dispatched.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "File write Activity completes, Worker SIGKILL, replay returns cached result without rewriting",
+      "setup": "Execute file-write Activity writing 'hello' to test.txt; SIGKILL after Activity completion",
+      "assertion": "test.txt contains 'hello' exactly once; file hash unchanged; workflow continues from cached result"
+    },
+    "paper_references": ["[TAMU-190]"],
+    "community_references": ["[ISSUE-10164]"],
+    "severity": "critical"
+  },
+  {
+    "crash_point_id": "CP-005",
+    "crash_point_name": "Mid-tool execution — external API call (Stripe, GitHub, Slack)",
+    "openclaw_component": "Agent Runtime -> Tool Execution -> HTTP/API",
+    "source_files": [
+      "src/agents/tools/pdf-native-providers.ts",
+      "src/agents/tools/message-tool.ts",
+      "src/agents/tools/gateway.ts",
+      "src/agents/pi-embedded-runner/openrouter-model-capabilities.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "HTTP request may have reached the external service and produced a side effect",
+      "No pre-execution checkpoint of request parameters",
+      "No idempotency key persisted that survives process restart",
+      "Gateway dedupe Map is in-memory only (src/gateway/server-runtime-state.ts)",
+      "pdf-native-providers.ts uses direct fetch() with no dedup guard"
+    ],
+    "state_in_memory_only": [
+      "HTTP response buffer",
+      "Gateway dedupe Map entries",
+      "In-flight request state"
+    ],
+    "tenure_checkpoint_required": [
+      "Tool call ID",
+      "API endpoint and parameters",
+      "Idempotency key (derived from call semantics, not UUID)",
+      "Serialized API response",
+      "Compensation action (e.g., refund, delete, close)"
+    ],
+    "temporal_primitive": "Activity (idempotency key) or Saga (for critical transactions)",
+    "replay_safe": true,
+    "replay_safe_reason": "With Temporal: Activity result prevents re-execution. For critical APIs (Stripe), a Saga pattern with compensation ensures exactly-once semantics even when the external service lacks native idempotency.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "API call Activity completes, Worker dies, replay returns cached response without re-calling API",
+      "setup": "Execute API-call Activity with idempotency key; SIGKILL after completion",
+      "assertion": "No second API call; cached response returned; external service state unchanged"
+    },
+    "paper_references": ["[TAMU-190]", "[CIK-TAX]"],
+    "community_references": ["[VERCEL-7261]"],
+    "severity": "critical"
+  },
+  {
+    "crash_point_id": "CP-006",
+    "crash_point_name": "Mid-tool execution — browser/Playwright session",
+    "openclaw_component": "Agent Runtime -> Browser Extension -> Playwright",
+    "source_files": [
+      "extensions/browser/src/browser/session-tab-registry.ts",
+      "src/browser-lifecycle-cleanup.ts",
+      "src/plugin-sdk/browser-maintenance.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Browser tab registry (trackedTabsBySession) is an in-memory Map — not persisted",
+      "DOM state, scroll position, form inputs, cookies are in the browser process, not on disk",
+      "Cleanup (cleanupBrowserSessionsForLifecycleEnd) runs best-effort via runBestEffortCleanup — skipped on SIGKILL",
+      "Browser/Chromium process may be orphaned with no mechanism to reconnect"
+    ],
+    "state_in_memory_only": [
+      "trackedTabsBySession Map (session-tab-registry.ts)",
+      "Browser CDP connection state",
+      "Page DOM, scroll position, form state",
+      "In-flight navigation or interaction results"
+    ],
+    "tenure_checkpoint_required": [
+      "Session ID for the browser context",
+      "Current URL and navigation state",
+      "Heartbeat payload with interaction progress",
+      "Activity result for each discrete browser action"
+    ],
+    "temporal_primitive": "Child Workflow (heartbeat 30s, ParentClosePolicy: TERMINATE)",
+    "replay_safe": false,
+    "replay_safe_reason": "Browser DOM state cannot be reconstructed from Temporal history alone. Session must restart from URL. Heartbeat payload should include enough context to resume from a meaningful checkpoint, not from scratch.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "Browser session child workflow with heartbeat; Worker SIGKILL; new Worker resumes from last heartbeat checkpoint",
+      "setup": "Start browser child workflow navigating through 3 pages; SIGKILL after page 2 heartbeat",
+      "assertion": "New Worker resumes from page 2 URL; browser re-launched; remaining actions complete; no duplicate page interactions"
+    },
+    "paper_references": ["[TAMU-190]"],
+    "community_references": [],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-007",
+    "crash_point_name": "Mid-tool execution — sandbox/container execution",
+    "openclaw_component": "Agent Runtime -> Sandbox Backend -> Docker",
+    "source_files": [
+      "src/agents/sandbox/backend.ts",
+      "src/agents/sandbox/docker.ts",
+      "src/agents/sandbox/registry.ts",
+      "src/agents/sandbox/prune.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl",
+      "Sandbox registry JSON on disk (containerName, sessionKey, configHash)"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Docker container keeps running after host SIGKILL — but host loses orchestration state",
+      "In-flight exec command output is lost",
+      "Registry tracks container existence but not execution progress within a container",
+      "No checkpoint of which sandbox command was running or its partial output"
+    ],
+    "state_in_memory_only": [
+      "docker exec output buffer",
+      "Orchestration state linking sandbox result to agent turn",
+      "Backend handle and session-scope mapping"
+    ],
+    "tenure_checkpoint_required": [
+      "Sandbox session ID",
+      "Command being executed",
+      "Activity result for the sandbox execution",
+      "Container name for reconnect on resume"
+    ],
+    "temporal_primitive": "Activity (isolated, with container reconnect on retry)",
+    "replay_safe": true,
+    "replay_safe_reason": "With Temporal: Activity wraps the sandbox exec. If Worker dies, replay returns cached result. If Activity was mid-execution, retry reconnects to the running container using the persisted registry.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "Sandbox exec Activity running; Worker SIGKILL; container survives; new Worker reconnects",
+      "setup": "Start sandbox Activity executing a script; SIGKILL host after container starts but before exec completes",
+      "assertion": "Container still running; retry Activity reconnects and collects output; no duplicate container creation"
+    },
+    "paper_references": ["[CLAW-6]"],
+    "community_references": [],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-008",
+    "crash_point_name": "Tool complete, result not delivered to next reasoning step",
+    "openclaw_component": "Agent Runtime -> Result Delivery -> SessionManager",
+    "source_files": [
+      "src/agents/pi-embedded-runner/wait-for-idle-before-flush.ts",
+      "src/agents/pi-embedded-runner/run/attempt.subscription-cleanup.ts",
+      "src/node-host/invoke.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl",
+      "Side effect already completed (file written, API called, etc.)"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Completed tool result is in SessionManager pending buffer, not yet in .jsonl",
+      "flushPendingToolResultsAfterIdle has 30s timeout; may clear instead of flush (clearPendingOnTimeout: true)",
+      "sendInvokeResult / sendNodeEvent errors are ignored (best-effort)",
+      "On restart, the tool result is gone. The side effect happened. No record exists to prevent re-execution."
+    ],
+    "state_in_memory_only": [
+      "Completed tool result in SessionManager pending buffer",
+      "Pending delivery state to next reasoning step",
+      "Tool call ID that links result to the dispatched call"
+    ],
+    "tenure_checkpoint_required": [
+      "Tool call ID",
+      "Serialized completed result (already in Temporal Event History as Activity completion)",
+      "This is the canonical crash point that Temporal replay solves directly"
+    ],
+    "temporal_primitive": "Activity (result already recorded in Event History)",
+    "replay_safe": true,
+    "replay_safe_reason": "This is Temporal's core value proposition. The Activity completed and its result is in Event History. On replay, the workflow receives the cached result without re-executing the tool. Zero re-execution, zero duplicate side effects.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "The canonical no-duplicate proof: file write completes, Worker dies before result delivery, replay resumes",
+      "setup": "Execute file-write Activity; SIGKILL Worker after Activity completion but before workflow advances",
+      "assertion": "File written exactly once; cached result returned on replay; workflow continues to next step"
+    },
+    "paper_references": ["[TAMU-190]"],
+    "community_references": ["[ISSUE-10164]", "[ISSUE-55343]"],
+    "severity": "critical"
+  },
+  {
+    "crash_point_id": "CP-009",
+    "crash_point_name": "Tool complete, result not delivered — critical transaction (Stripe charge, Terraform apply)",
+    "openclaw_component": "Agent Runtime -> Result Delivery -> Critical Path",
+    "source_files": [
+      "src/agents/tools/common.ts",
+      "src/agents/pi-embedded-runner/wait-for-idle-before-flush.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries in .jsonl",
+      "External side effect completed and is IRREVERSIBLE (charge created, infra deployed)"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Same gap as CP-008 but consequences are irreversible",
+      "A Stripe charge cannot be un-charged by simply retrying",
+      "A Terraform apply may have created real infrastructure",
+      "Without a durable record of completion, re-execution could charge twice or deploy twice"
+    ],
+    "state_in_memory_only": [
+      "Completed critical transaction result",
+      "Charge ID / resource ID that would be needed for compensation",
+      "HITL approval state that authorized the action"
+    ],
+    "tenure_checkpoint_required": [
+      "Tool call ID",
+      "Idempotency key (charge_id, resource_id)",
+      "Serialized result with external resource identifiers",
+      "Compensation action registration (RefundCharge, terraform destroy)",
+      "HITL approval record"
+    ],
+    "temporal_primitive": "Saga (exactly-once, with compensation chain)",
+    "replay_safe": true,
+    "replay_safe_reason": "Saga pattern: Activity records completion in Temporal history. Compensation Activity is registered. On replay, completed Activity returns cached result. If downstream steps fail, compensation runs the registered rollback (refund, destroy).",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "Critical transaction completes, Worker dies, replay resumes without re-executing the transaction",
+      "setup": "Execute Stripe-charge Saga Activity with HITL approval; SIGKILL after charge succeeds",
+      "assertion": "No second charge; charge_id in cached result; compensation registered; workflow continues"
+    },
+    "paper_references": ["[TAMU-190]", "[CIK-TAX]", "[GRIP]"],
+    "community_references": ["[ISSUE-10164]"],
+    "severity": "critical"
+  },
+  {
+    "crash_point_id": "CP-010",
+    "crash_point_name": "Result delivered to reasoning step, not flushed to .jsonl",
+    "openclaw_component": "Agent Runtime -> SessionManager -> Transcript Persistence",
+    "source_files": [
+      "src/agents/pi-embedded-runner/wait-for-idle-before-flush.ts",
+      "src/agents/pi-embedded-runner/replay-history.ts",
+      "src/agents/pi-embedded-runner/run/attempt.subscription-cleanup.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Prior transcript entries (missing the current tool result)"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Tool result was used for the current LLM turn but not persisted to .jsonl",
+      "replay-history.ts createProviderReplaySessionState catches and IGNORES persistence failures",
+      "On restart, the transcript is missing this result, creating a gap in conversation history",
+      "If the LLM used this result to make a decision that led to a side effect, the decision chain is broken"
+    ],
+    "state_in_memory_only": [
+      "Tool result in SessionManager pending buffer",
+      "LLM reasoning state that consumed this result"
+    ],
+    "tenure_checkpoint_required": [
+      "Already handled: if the Activity result is in Temporal Event History, this crash point is irrelevant",
+      "Temporal replay reconstructs the full execution chain regardless of .jsonl state"
+    ],
+    "temporal_primitive": "Activity (result already in Event History)",
+    "replay_safe": true,
+    "replay_safe_reason": "Temporal history is the authority, not .jsonl. Even if the transcript flush fails, Temporal replay reconstructs the correct execution state from Activity completions in Event History.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Tool result delivered but transcript flush fails; Temporal replay reconstructs state correctly",
+      "setup": "Execute Activity, deliver result to workflow, simulate .jsonl flush failure, SIGKILL",
+      "assertion": "Temporal replay returns all Activity results from history; workflow continues correctly regardless of .jsonl state"
+    },
+    "paper_references": [],
+    "community_references": ["[ISSUE-55343]"],
+    "severity": "medium"
+  },
+  {
+    "crash_point_id": "CP-011",
+    "crash_point_name": "Compaction mid-rewrite",
+    "openclaw_component": "Agent Runtime -> Compaction -> Session Transcript Rewrite",
+    "source_files": [
+      "src/agents/pi-embedded-runner/session-truncation.ts",
+      "src/agents/pi-embedded-runner/manual-compaction-boundary.ts",
+      "src/agents/pi-embedded-runner/compact.ts",
+      "src/gateway/session-compaction-checkpoints.js"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Original .jsonl before compaction started",
+      "Possible .bak archive copy (session-truncation.ts uses fs.copyFile)",
+      "Possible temp file with new compacted content"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Compaction uses temp file + fs.rename pattern — atomic on most filesystems but not guaranteed",
+      "If crash between copyFile to archive and rename of temp, the .jsonl may be in an intermediate state",
+      "Compaction depends on model summarization output which is non-deterministic (blocker B-2 from Session 1)",
+      "On replay, compaction would produce a different summary, causing workflow divergence"
+    ],
+    "state_in_memory_only": [
+      "Compaction summary from LLM",
+      "Checkpoint snapshot (captureCompactionCheckpointSnapshot)",
+      "Temp file path awaiting rename"
+    ],
+    "tenure_checkpoint_required": [
+      "Compaction must be a side-effecting Activity",
+      "The summary output must be recorded in Temporal history",
+      "On replay, the cached summary is returned instead of re-summarizing"
+    ],
+    "temporal_primitive": "Activity (side-effecting, result cached)",
+    "replay_safe": true,
+    "replay_safe_reason": "By treating compaction as an Activity, the non-deterministic summary output is recorded once and replayed deterministically. The .jsonl rewrite becomes a secondary effect.",
+    "side_effects_possible": true,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Compaction Activity completes, Worker dies mid-rewrite, replay returns cached summary",
+      "setup": "Trigger compaction Activity; SIGKILL during .jsonl rewrite",
+      "assertion": "Replay returns same summary from Temporal history; .jsonl is repaired on next startup"
+    },
+    "paper_references": [],
+    "community_references": [],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-012",
+    "crash_point_name": "SKILL.md loading interrupted",
+    "openclaw_component": "Agent Runtime -> Skill Loading -> Workspace Resolution",
+    "source_files": [
+      "src/agents/skills/local-loader.ts",
+      "src/agents/skills/workspace.ts",
+      "src/agents/skills/refresh-state.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "SKILL.md files on disk (unchanged by loading)",
+      "Prior snapshot version counters (in-memory only)"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Skill snapshot (SkillSnapshot) is a derived in-memory artifact, not persisted",
+      "workspaceVersions and globalVersion in refresh-state.ts are in-memory counters",
+      "Half-built snapshot is lost; no durable loading transaction",
+      "On restart, skills are re-read from disk (safe but adds startup latency)"
+    ],
+    "state_in_memory_only": [
+      "Partially built SkillSnapshot",
+      "workspaceVersions Map",
+      "globalVersion counter"
+    ],
+    "tenure_checkpoint_required": [
+      "Skill resolution should be an Activity that records the resolved skill set",
+      "Router classification depends on skill metadata; caching the resolution prevents non-determinism"
+    ],
+    "temporal_primitive": "Activity (cached, read-only)",
+    "replay_safe": true,
+    "replay_safe_reason": "SKILL.md files on disk are the source of truth and are unchanged by loading. Re-reading on restart is safe. As an Activity, the resolved skill set is cached in Temporal history for deterministic replay.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Skill resolution Activity caches resolved skill set; Worker restart does not re-resolve",
+      "setup": "Execute skill-resolution Activity; SIGKILL during loading; restart Worker",
+      "assertion": "If Activity completed: cached result returned. If not: Activity retries and re-reads from disk."
+    },
+    "paper_references": ["[FASA]"],
+    "community_references": [],
+    "severity": "low"
+  },
+  {
+    "crash_point_id": "CP-013",
+    "crash_point_name": "Cron timer fires, job execution not started",
+    "openclaw_component": "Cron Service -> Timer -> Job Dispatch",
+    "source_files": [
+      "src/cron/service/timer.ts",
+      "src/cron/service/ops.ts",
+      "src/cron/active-jobs.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "jobs.json with runningAtMs marker set",
+      "nextRunAtMs and lastRunAtMs from prior runs"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "setTimeout timer handle is in-memory — lost on SIGKILL",
+      "runningAtMs marker indicates dispatch intent, not execution start",
+      "On restart, ops.start clears stale runningAtMs and calls runMissedJobs",
+      "Catch-up re-executes from scratch — no way to know if the original dispatch had any effect"
+    ],
+    "state_in_memory_only": [
+      "setTimeout timer handle (CronServiceState.timer)",
+      "activeJobIds Set (src/cron/active-jobs.ts)",
+      "Job dispatch state"
+    ],
+    "tenure_checkpoint_required": [
+      "Temporal Schedule owns trigger timing",
+      "Schedule survives Worker death independently",
+      "No in-process timer needed"
+    ],
+    "temporal_primitive": "Temporal Schedule",
+    "replay_safe": true,
+    "replay_safe_reason": "Temporal Schedule fires independently of the Worker process. If the Worker is down, the Schedule queues the trigger. When the Worker restarts, catch-up executes according to the Schedule's overlap policy.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Temporal Schedule fires while Worker is down; Worker restarts and catches up",
+      "setup": "Configure Schedule for every 60s; SIGKILL Worker; wait 2 minutes; restart Worker",
+      "assertion": "Schedule fired during downtime; Worker processes missed triggers per policy; no gaps in execution"
+    },
+    "paper_references": [],
+    "community_references": ["[ISSUE-10164]", "[REDDIT-BURN]"],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-014",
+    "crash_point_name": "Cron job mid-execution — recurring job",
+    "openclaw_component": "Cron Service -> Timer -> Job Execution -> Agent Turn",
+    "source_files": [
+      "src/cron/service/timer.ts",
+      "src/gateway/server-cron.ts",
+      "src/cron/service/ops.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "jobs.json with runningAtMs marker",
+      "Partial agent turn transcript if any tool results were flushed"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Job execution state is in gateway process async flow with no durability wrapping",
+      "Side effects from the interrupted agent turn may have completed",
+      "On restart, catch-up via runMissedJobs re-executes the job from scratch",
+      "allowCronMissedRunByLastRun creates a new run without checking prior side effects",
+      "No dedup between the interrupted run and the catch-up run"
+    ],
+    "state_in_memory_only": [
+      "Agent turn execution state",
+      "Tool results from the interrupted turn",
+      "Job outcome (not yet applied via applyJobResult)"
+    ],
+    "tenure_checkpoint_required": [
+      "Each cron-triggered agent turn is a Temporal Workflow execution",
+      "Tool calls within the turn are Activities with idempotency keys",
+      "If Worker dies mid-turn, replay resumes from the last completed Activity",
+      "No catch-up re-execution needed — the original workflow resumes"
+    ],
+    "temporal_primitive": "Temporal Schedule -> Workflow Execution -> Activities",
+    "replay_safe": true,
+    "replay_safe_reason": "Each scheduled trigger starts a Workflow. Activities within the Workflow are checkpointed. Worker death causes replay from the last Activity completion. No duplicate side effects.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "The canonical cron durability proof from RESEARCH-SETUP.md",
+      "setup": "Configure 60s schedule appending timestamped lines to log.txt; run 3 cycles; SIGKILL; miss 2 cycles; restart",
+      "assertion": "log.txt has expected line count; no gaps from Worker death; no duplicates from catch-up; sequence numbers correct"
+    },
+    "paper_references": [],
+    "community_references": ["[ISSUE-10164]", "[REDDIT-BURN]"],
+    "severity": "critical"
+  },
+  {
+    "crash_point_id": "CP-015",
+    "crash_point_name": "Cron one-shot job interrupted",
+    "openclaw_component": "Cron Service -> One-Shot (schedule.kind: 'at')",
+    "source_files": [
+      "src/cron/service/ops.ts",
+      "src/cron/service/timer.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "jobs.json with runningAtMs and schedule.kind: 'at'"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "One-shot interrupted jobs are explicitly NOT retried on restart",
+      "ops.ts:107-134 collects interruptedOneShotIds and passes them as skipJobIds to runMissedJobs",
+      "The job's side effects may have partially completed but will never be retried or compensated",
+      "This is a documented design choice in OpenClaw, not a bug — but it means one-shot reliability is not guaranteed"
+    ],
+    "state_in_memory_only": [
+      "Job execution state",
+      "Partial side effects from the interrupted run"
+    ],
+    "tenure_checkpoint_required": [
+      "One-shot scheduled action becomes a Temporal Workflow",
+      "If interrupted, replay resumes from last Activity completion",
+      "No explicit skip — the Workflow simply continues"
+    ],
+    "temporal_primitive": "Temporal Schedule (one-shot) -> Workflow Execution",
+    "replay_safe": true,
+    "replay_safe_reason": "Temporal Workflows resume after Worker restart. A one-shot Workflow that was interrupted continues from its last checkpoint, unlike OpenClaw which abandons it.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "One-shot scheduled Workflow interrupted mid-execution; Worker restart resumes it",
+      "setup": "Schedule a one-shot Workflow with 3 Activity steps; SIGKILL after step 2",
+      "assertion": "Worker restart replays steps 1-2 from history; executes step 3; Workflow completes"
+    },
+    "paper_references": [],
+    "community_references": ["[ISSUE-10164]"],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-016",
+    "crash_point_name": "Gateway restart — mid-agent-run",
+    "openclaw_component": "Gateway -> WebSocket -> Agent Run Coordination",
+    "source_files": [
+      "src/gateway/server-broadcast.ts",
+      "src/gateway/server-runtime-state.ts",
+      "src/gateway/server/ws-connection.ts",
+      "src/gateway/server-methods/agent.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Session store entries on disk",
+      "Transcript .jsonl files on disk",
+      "Cron jobs.json on disk"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "All WS client connections dropped — clients Set is process-local",
+      "Broadcast seq counter resets — clients cannot detect gap size",
+      "Dedupe Map lost — same idempotency key can be accepted again after restart",
+      "agentRunSeq Map lost — run ordering state gone",
+      "Events are not replayed — official docs confirm clients must refresh on gaps",
+      "Any in-flight agent run that depended on Gateway coordination is broken"
+    ],
+    "state_in_memory_only": [
+      "WebSocket clients Set",
+      "Broadcast seq counter",
+      "Dedupe Map (src/gateway/server-runtime-state.ts)",
+      "agentRunSeq Map",
+      "Chat run buffers",
+      "Node registry entries",
+      "Node wake state"
+    ],
+    "tenure_checkpoint_required": [
+      "Tenure Workflows do not depend on Gateway for execution coordination",
+      "Temporal Server is the coordination authority, not the Gateway process",
+      "Gateway becomes a UI/notification layer, not the execution layer"
+    ],
+    "temporal_primitive": "N/A — Gateway is outside the Tenure execution boundary",
+    "replay_safe": true,
+    "replay_safe_reason": "By moving execution coordination to Temporal, Gateway restart only affects UI/notification delivery, not execution correctness. Workflows continue regardless of Gateway state.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Gateway restart during Tenure Workflow execution; Workflow continues unaffected",
+      "setup": "Start a multi-step Workflow; SIGKILL Gateway mid-execution; restart Gateway",
+      "assertion": "Workflow completes all steps; Gateway reconnect shows updated state; no execution interruption"
+    },
+    "paper_references": [],
+    "community_references": ["[ISSUE-62442]"],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-017",
+    "crash_point_name": "Subagent spawn — parent dies before child completes",
+    "openclaw_component": "Agent Runtime -> Subagent Registry -> Session Spawn",
+    "source_files": [
+      "src/agents/tools/sessions-spawn-tool.ts",
+      "src/agents/subagent-registry.ts",
+      "src/agents/subagent-registry-state.ts",
+      "src/agents/subagent-orphan-recovery.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Subagent runs.json on disk (containerName, sessionKey, requesterSessionKey)",
+      "Child session store entry",
+      "Child transcript .jsonl (if any tool results were flushed)"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "In-memory subagentRuns Map may have entries not yet persisted to runs.json",
+      "Pending timers (pendingLifecycleErrorByRunId), sweeper state, resumedRuns — lost",
+      "On restart, restoreSubagentRunsOnce reloads from disk but in-flight state is gone",
+      "Orphan recovery (scheduleSubagentOrphanRecovery) is best-effort and SIGUSR1-related",
+      "Child may complete while parent is dead — result has no parent to receive it"
+    ],
+    "state_in_memory_only": [
+      "subagentRuns Map (partially — disk snapshot may lag)",
+      "Pending lifecycle timers",
+      "Sweeper state",
+      "In-flight announce sets"
+    ],
+    "tenure_checkpoint_required": [
+      "Parent-child relationship modeled as parent Workflow -> child Workflow",
+      "ParentClosePolicy determines child behavior on parent death",
+      "Child completion signals parent Workflow via Temporal, not in-process callbacks"
+    ],
+    "temporal_primitive": "Child Workflow (ParentClosePolicy: ABANDON or TERMINATE)",
+    "replay_safe": true,
+    "replay_safe_reason": "Temporal's parent-child Workflow relationship survives Worker death. Child completion is recorded in Temporal history. Parent replay receives the child result from history.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "Parent Workflow spawns child; parent Worker dies; child completes; parent resumes and receives result",
+      "setup": "Start parent Workflow that spawns child Workflow; SIGKILL parent Worker; child completes independently",
+      "assertion": "Parent Worker restarts; replay reaches child-spawn point; receives child result from history; continues"
+    },
+    "paper_references": ["[TAMU-190]"],
+    "community_references": [],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-018",
+    "crash_point_name": "Multi-agent message delivery — sender dies after send",
+    "openclaw_component": "Agent Runtime -> sessions_send -> Gateway agent RPC",
+    "source_files": [
+      "src/agents/tools/sessions-send-tool.ts",
+      "src/agents/tools/sessions-send-tool.a2a.ts",
+      "src/gateway/server-methods/agent.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Target session may have received the message (if Gateway processed it)",
+      "Sender transcript may or may not include the send result"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "sessions_send uses crypto.randomUUID() for idempotency key per invocation",
+      "Gateway dedupe Map is in-memory only — restart allows re-acceptance of same logical send",
+      "A2A flow uses separate randomUUID() per announce send — no long-lived idempotency",
+      "delivery field in tool result is ephemeral { status: 'pending', mode: 'announce' } — not a durable receipt",
+      "If sender dies after send reaches Gateway but before confirmation, no record of successful delivery"
+    ],
+    "state_in_memory_only": [
+      "Gateway dedupe Map entry for this send",
+      "In-flight agent run on the target session",
+      "Delivery confirmation state"
+    ],
+    "tenure_checkpoint_required": [
+      "Inter-agent send becomes a Signal to the target Workflow",
+      "Signal delivery is recorded in Temporal history on both sides",
+      "Sender Activity completes when Signal is accepted by Temporal Server"
+    ],
+    "temporal_primitive": "Activity (send) + Signal (receive)",
+    "replay_safe": true,
+    "replay_safe_reason": "Temporal Signals are durable. The send Activity records Signal dispatch in history. The receiving Workflow records Signal receipt. Both survive Worker death.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "Agent A sends Signal to Agent B; A's Worker dies after send; B receives and processes; A resumes",
+      "setup": "Workflow A sends Signal to Workflow B; SIGKILL A's Worker after Signal dispatch",
+      "assertion": "Signal delivered to B; A's replay returns send confirmation from history; no duplicate send"
+    },
+    "paper_references": [],
+    "community_references": [],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-019",
+    "crash_point_name": "MCP bridge — mid-tool-call via external MCP server",
+    "openclaw_component": "MCP -> Channel Bridge -> External MCP Server",
+    "source_files": [
+      "src/mcp/channel-bridge.ts",
+      "src/mcp/channel-tools.ts",
+      "src/mcp/plugin-tools-serve.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Nothing MCP-specific persisted"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "MCP bridge queue (max 1000 events), pendingWaiters, pendingApprovals — all in-memory",
+      "Tool call ID is mcp-${Date.now()} — not stable, not persisted, not idempotent",
+      "close().catch(() => undefined) swallows shutdown errors",
+      "sendNotification errors suppressed except optional stderr",
+      "Entire MCP state is lost on SIGKILL with no recovery path"
+    ],
+    "state_in_memory_only": [
+      "Bridge event queue",
+      "Pending waiters",
+      "Pending approvals",
+      "Pending Claude permissions",
+      "Gateway handle",
+      "Cursor position"
+    ],
+    "tenure_checkpoint_required": [
+      "MCP tool call wrapped in Activity",
+      "Tool call ID derived from workflow state (not Date.now())",
+      "Activity result persisted in Temporal history"
+    ],
+    "temporal_primitive": "Activity",
+    "replay_safe": true,
+    "replay_safe_reason": "MCP tool call becomes a Temporal Activity. The MCP-specific state is ephemeral and reconstructed per-call. Activity result in Temporal history is the durable record.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "MCP tool Activity completes; Worker SIGKILL; replay returns cached result",
+      "setup": "Execute MCP tool call as Activity; SIGKILL after completion",
+      "assertion": "No second MCP call; cached result from Temporal history; no orphaned MCP state"
+    },
+    "paper_references": ["[TAMU-190]"],
+    "community_references": [],
+    "severity": "high"
+  },
+  {
+    "crash_point_id": "CP-020",
+    "crash_point_name": "Gateway dedupe map lost — duplicate tool calls accepted after restart",
+    "openclaw_component": "Gateway -> Dedupe -> Agent RPC",
+    "source_files": [
+      "src/gateway/server-runtime-state.ts",
+      "src/gateway/server-methods/agent.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Nothing — dedupe Map is process-local"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Gateway dedupe Map is created at startup: dedupe = new Map()",
+      "Keys are like agent:${idempotencyKey} with in-memory lifetime only",
+      "Test 'agent dedupe survives reconnect' tests WS reconnect to same process, NOT process restart",
+      "After SIGKILL + restart, the same idempotencyKey is accepted again",
+      "This is the mechanism that should prevent duplicate tool calls but it does not survive crashes"
+    ],
+    "state_in_memory_only": [
+      "Entire dedupe Map"
+    ],
+    "tenure_checkpoint_required": [
+      "Temporal's deterministic replay IS the dedup mechanism",
+      "Activity IDs are deterministic from workflow state",
+      "Completed Activities are never re-executed — Temporal history is the dedup guard"
+    ],
+    "temporal_primitive": "Temporal Event History (inherent dedup via replay)",
+    "replay_safe": true,
+    "replay_safe_reason": "Temporal replay is inherently dedup-safe. Completed Activities return cached results. No external dedup map needed. The dedup is structural, not a fragile in-memory cache.",
+    "side_effects_possible": true,
+    "idempotency_required": true,
+    "test_case": {
+      "description": "Verify Temporal replay prevents duplicate execution after Worker restart",
+      "setup": "Execute 5 Activities in a Workflow; SIGKILL after Activity 3; restart Worker",
+      "assertion": "Activities 1-3 return cached results; Activity 4-5 execute once each; total executions = 5, not 8"
+    },
+    "paper_references": ["[TAMING-26]"],
+    "community_references": ["[VERCEL-7261]"],
+    "severity": "critical",
+    "boundary_breaking": true,
+    "boundary_breaking_reason": "This is not just a crash point — it is a fundamental architectural gap. OpenClaw's dedup mechanism is ephemeral. Tenure's dedup mechanism is structural via Temporal replay."
+  },
+  {
+    "crash_point_id": "CP-021",
+    "crash_point_name": "Task registry — unsaved in-memory Maps lost",
+    "openclaw_component": "Tasks -> Task Registry -> SQLite Persistence",
+    "source_files": [
+      "src/tasks/task-registry.ts",
+      "src/tasks/task-registry.store.sqlite.ts",
+      "src/tasks/task-flow-registry.ts"
+    ],
+    "openclaw_persisted_before_crash": [
+      "Task registry snapshot in SQLite (if upsert completed)",
+      "Task flow records in SQLite"
+    ],
+    "why_openclaw_persistence_is_insufficient": [
+      "Primary working set is in-memory Maps; SQLite is populated via incremental upsert",
+      "If SIGKILL arrives between Map update and SQLite upsert, the latest state is lost",
+      "restoreTaskRegistryOnce failure: log.warn only, does not rethrow",
+      "Task flow observer errors: empty catch with comment 'must not break registry writes'",
+      "On restart, SQLite snapshot may be stale relative to actual task state"
+    ],
+    "state_in_memory_only": [
+      "tasks Map (between upsert calls)",
+      "taskDeliveryStates Map",
+      "Indexes by runId/owner/parent flow",
+      "flows Map (task-flow-registry.ts)"
+    ],
+    "tenure_checkpoint_required": [
+      "Task state managed as Workflow state in Temporal",
+      "Each task state transition is a Workflow signal or Activity",
+      "No separate task registry needed — Workflow state IS the registry"
+    ],
+    "temporal_primitive": "Workflow state (Queries for read, Signals for updates)",
+    "replay_safe": true,
+    "replay_safe_reason": "Task state as Workflow state is inherently durable. Temporal replays reconstruct exact task state from Activity completions and Signal receipts. No SQLite sync gap.",
+    "side_effects_possible": false,
+    "idempotency_required": false,
+    "test_case": {
+      "description": "Task state transitions survive Worker death via Workflow replay",
+      "setup": "Create task Workflow with 5 state transitions; SIGKILL after transition 3",
+      "assertion": "Replay reconstructs transitions 1-3 from history; transitions 4-5 execute normally"
+    },
+    "paper_references": [],
+    "community_references": [],
+    "severity": "medium"
+  }
+]

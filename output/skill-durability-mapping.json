@@ -1,0 +1,682 @@
+[
+  {
+    "skill_name": "sequential-thinking",
+    "skill_rank": 1,
+    "source": "Built-in (pi-coding-agent)",
+    "openclaw_tool_name": "N/A — internal reasoning, not a dispatched tool",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.95,
+    "edge_cases": [
+      {
+        "condition": "Thinking produces a side-effecting decision that is immediately acted on without a tool call",
+        "actual_execution_type": "N/A — outside SER boundary",
+        "detection_signal": "No tool_use block emitted; pure assistant reasoning",
+        "why_primary_is_wrong": "Not wrong — thinking is outside Tenure's execution boundary. OpenClaw owns reasoning.",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Extended thinking mode with high token consumption",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Model config includes thinking level 'high' or provider supports extended thinking",
+        "why_primary_is_wrong": "Classification unchanged but budget tracking must account for high inference cost",
+        "temporal_primitive_override": "None — but budget check includes inference tokens",
+        "thinking_cost_override": "High"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "idempotent_read",
+      "cache": { "enabled": true, "ttl": 300 },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "shell-bash-execution",
+    "skill_rank": 2,
+    "source": "Built-in (bash-tools.ts)",
+    "openclaw_tool_name": "exec",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.75,
+    "edge_cases": [
+      {
+        "condition": "Command is a read-only query (ls, cat, grep, echo, pwd, env)",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Command string matches read-only pattern: starts with ls, cat, grep, echo, pwd, env, which, type, head, tail, wc",
+        "why_primary_is_wrong": "Read-only commands have no side effects and are safe to retry/cache",
+        "temporal_primitive_override": "Activity, cached",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Command runs in background mode",
+        "actual_execution_type": "long_running_process",
+        "detection_signal": "Parameter background: true in bash-tools schema",
+        "why_primary_is_wrong": "Background processes need heartbeat monitoring, not simple retry",
+        "temporal_primitive_override": "Child workflow, heartbeat",
+        "thinking_cost_override": "Medium"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "side_effect_mutation -> Activity, logged",
+      "if read-only pattern": "idempotent_read -> Activity, cached",
+      "if background": "long_running_process -> Child workflow, heartbeat"
+    },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": [
+      "Command string prefix matching for read-only detection",
+      "background parameter in tool input"
+    ],
+    "execution_block": {
+      "type": "side_effect_mutation",
+      "retry": 2,
+      "compensation": "none",
+      "hitl": "optional",
+      "cost": { "thinkingCost": "medium" }
+    }
+  },
+  {
+    "skill_name": "file-read",
+    "skill_rank": 3,
+    "source": "Built-in (pi-tools.read.ts)",
+    "openclaw_tool_name": "read",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.99,
+    "edge_cases": [
+      {
+        "condition": "Reading a file that is being actively written by another tool or process",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Not detectable at routing time — result may be stale or partial",
+        "why_primary_is_wrong": "Classification unchanged; result correctness depends on write ordering, not read execution type",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Reading a very large file that exceeds context window",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "File size exceeds modelContextWindowTokens budget (adaptive max bytes in pi-tools.read.ts)",
+        "why_primary_is_wrong": "Classification unchanged but result is truncated; cache must store the truncated version",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "idempotent_read",
+      "cache": { "enabled": true, "ttl": 300 },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "file-write-create",
+    "skill_rank": 4,
+    "source": "Built-in (pi-tools.read.ts → createHostWorkspaceWriteTool)",
+    "openclaw_tool_name": "write",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.95,
+    "edge_cases": [
+      {
+        "condition": "Overwriting an existing file (destructive write vs create)",
+        "actual_execution_type": "side_effect_mutation",
+        "detection_signal": "File exists at path before write (checkable via stat)",
+        "why_primary_is_wrong": "Classification unchanged but compensation must capture pre-write content for revert, not just delete",
+        "temporal_primitive_override": "Activity, idempotency key + pre-write snapshot",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Writing to a path outside the workspace (escape attempt)",
+        "actual_execution_type": "side_effect_mutation",
+        "detection_signal": "Resolved path escapes workspace root after symlink resolution",
+        "why_primary_is_wrong": "Classification unchanged but HITL should be required for out-of-workspace writes",
+        "temporal_primitive_override": "Activity, idempotency key, HITL required",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "side_effect_mutation -> Activity, idempotency key"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "side_effect_mutation",
+      "retry": 3,
+      "idempotency": { "key": "path+content_hash" },
+      "compensation": { "tool": "delete_or_revert" },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "file-edit",
+    "skill_rank": 5,
+    "source": "Built-in (pi-tools.read.ts → createHostWorkspaceEditTool)",
+    "openclaw_tool_name": "edit",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.95,
+    "edge_cases": [
+      {
+        "condition": "Edit target text does not exist in the file (oldText not found)",
+        "actual_execution_type": "side_effect_mutation",
+        "detection_signal": "Runtime: oldText search fails in file content",
+        "why_primary_is_wrong": "Execution fails but Activity should still record the failure to prevent retry confusion",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Multiple edits in one call create conflicting patches",
+        "actual_execution_type": "side_effect_mutation",
+        "detection_signal": "edits array length > 1 with overlapping ranges",
+        "why_primary_is_wrong": "Partial application risk — some edits may succeed before a conflict. Compensation must revert all.",
+        "temporal_primitive_override": "Activity, idempotency key, atomic-or-rollback",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "side_effect_mutation -> Activity, idempotency key"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "side_effect_mutation",
+      "retry": 3,
+      "idempotency": { "key": "path+oldText_hash+newText_hash" },
+      "compensation": { "tool": "revert_to_pre_edit" },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "github-api",
+    "skill_rank": 6,
+    "source": "Plugin / MCP",
+    "openclaw_tool_name": "varies (plugin-registered)",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.7,
+    "edge_cases": [
+      {
+        "condition": "Action is merge PR targeting main or production",
+        "actual_execution_type": "critical_transaction",
+        "detection_signal": "Action parameter contains 'merge' AND base branch is 'main' or 'production'",
+        "why_primary_is_wrong": "Merging to main is irreversible in practice (revert is different from undo). Requires HITL.",
+        "temporal_primitive_override": "Saga, exactly-once, HITL recommended",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Action is a read-only query (list repos, get PR status, get issue)",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "HTTP method maps to GET; action is 'list', 'get', 'search'",
+        "why_primary_is_wrong": "Read-only GitHub API calls are safe to cache and retry",
+        "temporal_primitive_override": "Activity, cached",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "side_effect_mutation -> Activity, idempotency key",
+      "if merge to main": "critical_transaction -> Saga, HITL",
+      "if read-only": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": [
+      "Action parameter (merge vs create vs list)",
+      "Target branch name",
+      "HTTP method equivalent"
+    ],
+    "execution_block": {
+      "type": "side_effect_mutation",
+      "retry": 3,
+      "compensation": { "tool": "close_pr_or_delete_branch" },
+      "hitl": "optional",
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "web-search",
+    "skill_rank": 7,
+    "source": "Built-in (web-search.ts)",
+    "openclaw_tool_name": "web_search",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.99,
+    "edge_cases": [
+      {
+        "condition": "Search provider is rate-limited or quota-exhausted",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "HTTP 429 response or provider-specific quota error",
+        "why_primary_is_wrong": "Classification unchanged; retry with backoff is appropriate. Activity retry policy handles this.",
+        "temporal_primitive_override": "None — retry policy escalation",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Search results contain sponsored/paid content that costs per impression",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Provider billing model (not detectable from tool params alone)",
+        "why_primary_is_wrong": "Classification unchanged; cost tracking should note per-query cost for budget enforcement",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "idempotent_read",
+      "cache": { "enabled": true, "ttl": 300 },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "web-fetch",
+    "skill_rank": 8,
+    "source": "Built-in (web-fetch.ts)",
+    "openclaw_tool_name": "web_fetch",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.9,
+    "edge_cases": [
+      {
+        "condition": "URL triggers a webhook or tracking pixel (GET with side effects)",
+        "actual_execution_type": "side_effect_mutation",
+        "detection_signal": "URL pattern matches known webhook/tracking domains (heuristic only)",
+        "why_primary_is_wrong": "Some URLs have server-side side effects on fetch. Not detectable reliably.",
+        "temporal_primitive_override": "Activity, logged (if suspicious URL pattern)",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Fetching a URL that requires authentication or has SSRF risk",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "URL targets internal/private IP ranges; SSRF guard triggers (fetchWithSsrFGuard)",
+        "why_primary_is_wrong": "Classification unchanged; SSRF guard is a security boundary, not an execution type change",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "idempotent_read",
+      "cache": { "enabled": true, "ttl": 300 },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "grep-ripgrep",
+    "skill_rank": 9,
+    "source": "Built-in (pi-coding-agent)",
+    "openclaw_tool_name": "grep",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.99,
+    "edge_cases": [
+      {
+        "condition": "Regex pattern causes catastrophic backtracking (ReDoS)",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Pattern complexity heuristic or execution timeout",
+        "why_primary_is_wrong": "Classification unchanged; timeout policy handles this. Activity startToCloseTimeout terminates runaway regex.",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Searching binary files or very large repos",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Result size exceeds output limit",
+        "why_primary_is_wrong": "Classification unchanged; result truncation is a correctness issue, not a type change",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "idempotent_read",
+      "cache": { "enabled": true, "ttl": 300 },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "glob-file-pattern",
+    "skill_rank": 10,
+    "source": "Built-in (pi-coding-agent)",
+    "openclaw_tool_name": "find / ls",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.99,
+    "edge_cases": [
+      {
+        "condition": "Glob pattern matches thousands of files",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Result count exceeds configured limit",
+        "why_primary_is_wrong": "Classification unchanged; result is truncated",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Glob traverses symlinks into external filesystems",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Resolved path escapes workspace root",
+        "why_primary_is_wrong": "Security boundary, not type change",
+        "temporal_primitive_override": "None",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached"
+    },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": {
+      "type": "idempotent_read",
+      "cache": { "enabled": true, "ttl": 300 },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "git-operations",
+    "skill_rank": 11,
+    "source": "Built-in (via exec tool with git commands)",
+    "openclaw_tool_name": "exec (with git command)",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.75,
+    "edge_cases": [
+      {
+        "condition": "Command is git status, git log, git diff (read-only)",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "git subcommand is status, log, diff, show, branch (no -D), remote, tag (no -d)",
+        "why_primary_is_wrong": "Read-only git commands have no side effects",
+        "temporal_primitive_override": "Activity, cached",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "Command is git push --force to main",
+        "actual_execution_type": "critical_transaction",
+        "detection_signal": "git push with --force flag AND remote branch is main or master",
+        "why_primary_is_wrong": "Force push to main is destructive and practically irreversible. HITL required.",
+        "temporal_primitive_override": "Saga, HITL required",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "side_effect_mutation -> Activity, idempotency key",
+      "if read-only git": "idempotent_read -> Activity, cached",
+      "if force push to main": "critical_transaction -> Saga, HITL"
+    },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": [
+      "git subcommand name",
+      "--force flag presence",
+      "target branch name"
+    ],
+    "execution_block": {
+      "type": "side_effect_mutation",
+      "retry": 3,
+      "compensation": { "tool": "git_revert_or_branch_delete" },
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "postgresql-query",
+    "skill_rank": 12,
+    "source": "Plugin / MCP",
+    "openclaw_tool_name": "varies (plugin-registered)",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.6,
+    "edge_cases": [
+      {
+        "condition": "SQL contains INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE",
+        "actual_execution_type": "side_effect_mutation",
+        "detection_signal": "SQL statement contains write-pattern keywords (case-insensitive regex)",
+        "why_primary_is_wrong": "Write queries mutate data and require idempotency + transaction rollback",
+        "temporal_primitive_override": "Activity, idempotency key, transaction-wrapped",
+        "thinking_cost_override": "Low"
+      },
+      {
+        "condition": "SQL is a DDL statement (CREATE TABLE, ALTER TABLE)",
+        "actual_execution_type": "critical_transaction",
+        "detection_signal": "SQL starts with CREATE, ALTER, DROP (DDL keywords)",
+        "why_primary_is_wrong": "Schema changes are effectively irreversible and should require approval",
+        "temporal_primitive_override": "Saga, HITL recommended",
+        "thinking_cost_override": "Low"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "idempotent_read -> Activity, cached",
+      "if DML write": "side_effect_mutation -> Activity, keyed + transaction",
+      "if DDL": "critical_transaction -> Saga, HITL"
+    },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": [
+      "SQL keyword analysis (SELECT vs INSERT/UPDATE/DELETE vs CREATE/ALTER/DROP)"
+    ],
+    "execution_block": {
+      "type": "idempotent_read",
+      "retry": 3,
+      "cost": { "thinkingCost": "low" }
+    }
+  },
+  {
+    "skill_name": "playwright-browser",
+    "skill_rank": 13,
+    "source": "Extension (browser plugin)",
+    "openclaw_tool_name": "browser",
+    "primary_execution_type": "stateful_session",
+    "primary_classification_confidence": 0.95,
+    "edge_cases": [
+      {
+        "condition": "Single-page screenshot (no multi-step interaction)",
+        "actual_execution_type": "idempotent_read",
+        "detection_signal": "Action is navigate + screenshot with no form fill, click, or state mutation",
+        "why_primary_is_wrong": "Single-action browser use doesn't need session management or heartbeat",
+        "temporal_primitive_override": "Activity, cached",
+        "thinking_cost_override": "Medium"
+      },
+      {
+        "condition": "Browser session fills a payment form (side-effecting interaction)",
+        "actual_execution_type": "critical_transaction",
+        "detection_signal": "Page URL matches payment/checkout domain; form contains credit card fields",
+        "why_primary_is_wrong": "Financial interaction through browser needs HITL and exactly-once semantics",
+        "temporal_primitive_override": "Child workflow, heartbeat, HITL required",
+        "thinking_cost_override": "High"
+      }
+    ],
+    "conditional_classification_tree": {
+      "default": "stateful_session -> Child workflow, heartbeat 30s",
+      "if single-action": "idempotent_read -> Activity, cached",
+      "if payment form": "critical_transaction -> Child workflow, HITL"
+    },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": [
+      "Action type (navigate-only vs multi-step)",
+      "Target URL domain classification",
+      "Form field content analysis"
+    ],
+    "execution_block": {
+      "type": "stateful_session",
+      "temporal": { "childWorkflow": true, "heartbeatInterval": 30 },
+      "compensation": { "tool": "close_browser_session" },
+      "cost": { "thinkingCost": "high" }
+    }
+  },
+  {
+    "skill_name": "sqlite-operations",
+    "skill_rank": 14,
+    "source": "Plugin / MCP",
+    "openclaw_tool_name": "varies",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.6,
+    "edge_cases": [
+      { "condition": "SQL contains write keywords", "actual_execution_type": "side_effect_mutation", "detection_signal": "Same as PostgreSQL (#12)", "why_primary_is_wrong": "Write queries mutate local DB state", "temporal_primitive_override": "Activity, keyed", "thinking_cost_override": "Low" },
+      { "condition": "SQL targets WAL or journal mode changes", "actual_execution_type": "side_effect_mutation", "detection_signal": "PRAGMA journal_mode or PRAGMA wal_checkpoint", "why_primary_is_wrong": "Database configuration changes affect durability guarantees", "temporal_primitive_override": "Activity, logged, HITL optional", "thinking_cost_override": "Low" }
+    ],
+    "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached", "if write": "side_effect_mutation -> Activity, keyed" },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": ["SQL keyword analysis"],
+    "execution_block": { "type": "idempotent_read", "retry": 3, "cost": { "thinkingCost": "low" } }
+  },
+  {
+    "skill_name": "memory-knowledge-graph",
+    "skill_rank": 15,
+    "source": "Plugin (memory-host-sdk)",
+    "openclaw_tool_name": "varies (memory plugin)",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.85,
+    "edge_cases": [
+      { "condition": "Memory search/recall (read-only)", "actual_execution_type": "idempotent_read", "detection_signal": "Action is 'search', 'recall', 'query'", "why_primary_is_wrong": "Read from memory store has no side effects", "temporal_primitive_override": "Activity, cached", "thinking_cost_override": "Low" },
+      { "condition": "Memory bulk purge or schema reset", "actual_execution_type": "critical_transaction", "detection_signal": "Action is 'purge', 'reset', 'delete_all'", "why_primary_is_wrong": "Bulk deletion of memory is effectively irreversible", "temporal_primitive_override": "Saga, HITL recommended", "thinking_cost_override": "Low" }
+    ],
+    "conditional_classification_tree": { "default": "side_effect_mutation -> Activity, idempotency key", "if read": "idempotent_read -> Activity, cached", "if purge": "critical_transaction -> Saga, HITL" },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": ["Action parameter (search vs add vs purge)"],
+    "execution_block": { "type": "side_effect_mutation", "retry": 3, "compensation": { "tool": "delete_memory_entry" }, "cost": { "thinkingCost": "low" } }
+  },
+  {
+    "skill_name": "context7-docs",
+    "skill_rank": 16,
+    "source": "MCP Server",
+    "openclaw_tool_name": "query-docs (via MCP)",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.99,
+    "edge_cases": [
+      { "condition": "Documentation source is temporarily unavailable", "actual_execution_type": "idempotent_read", "detection_signal": "HTTP error from upstream", "why_primary_is_wrong": "Classification unchanged; retry policy handles transient failures", "temporal_primitive_override": "None", "thinking_cost_override": "Low" },
+      { "condition": "Query returns stale documentation", "actual_execution_type": "idempotent_read", "detection_signal": "Not detectable at routing time", "why_primary_is_wrong": "Cache freshness is a quality issue, not a type change", "temporal_primitive_override": "None", "thinking_cost_override": "Low" }
+    ],
+    "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached" },
+    "static_classification_sufficient": true,
+    "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": { "type": "idempotent_read", "cache": { "enabled": true, "ttl": 300 }, "cost": { "thinkingCost": "low" } }
+  },
+  {
+    "skill_name": "python-repl",
+    "skill_rank": 17,
+    "source": "Plugin / Sandbox",
+    "openclaw_tool_name": "exec (sandboxed) or plugin",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.8,
+    "edge_cases": [
+      { "condition": "Code only reads/computes (no file write, no network, no state change)", "actual_execution_type": "idempotent_read", "detection_signal": "Static analysis of code: no open(), write(), requests., subprocess. calls", "why_primary_is_wrong": "Pure computation in sandbox is safe to retry", "temporal_primitive_override": "Activity, cached", "thinking_cost_override": "Medium" },
+      { "condition": "Code makes network requests or installs packages", "actual_execution_type": "side_effect_mutation", "detection_signal": "Code contains import requests, urllib, pip install, apt-get", "why_primary_is_wrong": "Network/install side effects need idempotency tracking", "temporal_primitive_override": "Activity, logged", "thinking_cost_override": "Medium" }
+    ],
+    "conditional_classification_tree": { "default": "side_effect_mutation -> Activity, logged", "if pure computation": "idempotent_read -> Activity, cached" },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": ["Code static analysis for side-effect patterns"],
+    "execution_block": { "type": "side_effect_mutation", "retry": 2, "hitl": "optional", "cost": { "thinkingCost": "medium" } }
+  },
+  {
+    "skill_name": "desktop-commander",
+    "skill_rank": 18,
+    "source": "Plugin / MCP",
+    "openclaw_tool_name": "varies",
+    "primary_execution_type": "side_effect_mutation",
+    "primary_classification_confidence": 0.85,
+    "edge_cases": [
+      { "condition": "Command is file listing or system info query", "actual_execution_type": "idempotent_read", "detection_signal": "Command pattern matches read-only operations", "why_primary_is_wrong": "Same as shell #2 read-only case", "temporal_primitive_override": "Activity, cached", "thinking_cost_override": "Low" },
+      { "condition": "Command modifies system configuration", "actual_execution_type": "critical_transaction", "detection_signal": "Command targets /etc/, systemctl, launchctl, registry", "why_primary_is_wrong": "System config changes are hard to reverse", "temporal_primitive_override": "Saga, HITL required", "thinking_cost_override": "Medium" }
+    ],
+    "conditional_classification_tree": { "default": "side_effect_mutation -> Activity, logged" },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": ["Command string analysis"],
+    "execution_block": { "type": "side_effect_mutation", "retry": 2, "hitl": "optional", "cost": { "thinkingCost": "medium" } }
+  },
+  {
+    "skill_name": "kubernetes-management",
+    "skill_rank": 19,
+    "source": "Plugin / MCP",
+    "openclaw_tool_name": "varies",
+    "primary_execution_type": "critical_transaction",
+    "primary_classification_confidence": 0.85,
+    "edge_cases": [
+      { "condition": "Action is kubectl get / describe / logs (read-only)", "actual_execution_type": "idempotent_read", "detection_signal": "kubectl subcommand is get, describe, logs, top", "why_primary_is_wrong": "Read-only k8s queries are safe to cache", "temporal_primitive_override": "Activity, cached", "thinking_cost_override": "Low" },
+      { "condition": "Action is kubectl delete namespace or helm uninstall", "actual_execution_type": "critical_transaction", "detection_signal": "Subcommand is 'delete' targeting namespace-scoped or cluster-scoped resource", "why_primary_is_wrong": "Destructive cluster operations; HITL mandatory", "temporal_primitive_override": "Saga, HITL required, compensation: recreate", "thinking_cost_override": "Medium" }
+    ],
+    "conditional_classification_tree": { "default": "critical_transaction -> Saga, exactly-once", "if read-only": "idempotent_read -> Activity, cached" },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": ["kubectl subcommand", "resource type", "namespace scope"],
+    "execution_block": { "type": "critical_transaction", "retry": 1, "hitl": "recommended", "compensation": { "tool": "rollback_deployment" }, "cost": { "thinkingCost": "medium" } }
+  },
+  {
+    "skill_name": "lsp-code-analysis",
+    "skill_rank": 20,
+    "source": "Built-in (LSP runtime)",
+    "openclaw_tool_name": "varies (lsp integration)",
+    "primary_execution_type": "idempotent_read",
+    "primary_classification_confidence": 0.99,
+    "edge_cases": [
+      { "condition": "LSP server is not running or crashed", "actual_execution_type": "idempotent_read", "detection_signal": "LSP connection error", "why_primary_is_wrong": "Classification unchanged; retry connects to fresh LSP instance", "temporal_primitive_override": "None", "thinking_cost_override": "Low" },
+      { "condition": "LSP rename operation (side-effecting refactor)", "actual_execution_type": "side_effect_mutation", "detection_signal": "LSP method is textDocument/rename", "why_primary_is_wrong": "Rename modifies files across the workspace", "temporal_primitive_override": "Activity, idempotency key", "thinking_cost_override": "Low" }
+    ],
+    "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached", "if rename": "side_effect_mutation -> Activity, keyed" },
+    "static_classification_sufficient": false,
+    "runtime_inference_required": true,
+    "runtime_inference_signals": ["LSP method name (definition vs rename)"],
+    "execution_block": { "type": "idempotent_read", "cache": { "enabled": true, "ttl": 300 }, "cost": { "thinkingCost": "low" } }
+  },
+  {
+    "skill_name": "slack-messaging", "skill_rank": 25, "source": "Plugin / MCP", "openclaw_tool_name": "message (channel plugin)",
+    "primary_execution_type": "side_effect_mutation", "primary_classification_confidence": 0.7,
+    "edge_cases": [
+      { "condition": "Config includes waitForReply: true", "actual_execution_type": "human_interactive", "detection_signal": "Presence of waitForReply in skill config or tool params", "why_primary_is_wrong": "Must block on external human response with zero compute while waiting", "temporal_primitive_override": "Signal / wait, zero compute", "thinking_cost_override": "Zero while waiting" },
+      { "condition": "Sending to a channel with approval workflow", "actual_execution_type": "human_interactive", "detection_signal": "Channel metadata indicates approval-required", "why_primary_is_wrong": "Message needs human approval before delivery", "temporal_primitive_override": "Signal / wait, HITL", "thinking_cost_override": "Zero while waiting" }
+    ],
+    "conditional_classification_tree": { "default": "side_effect_mutation -> Activity, dedup guard", "if waitForReply": "human_interactive -> Signal / wait" },
+    "static_classification_sufficient": false, "runtime_inference_required": true,
+    "runtime_inference_signals": ["waitForReply parameter", "channel approval metadata"],
+    "execution_block": { "type": "side_effect_mutation", "retry": 3, "cost": { "thinkingCost": "low" } }
+  },
+  {
+    "skill_name": "subagent-spawning", "skill_rank": 28, "source": "Built-in (sessions-spawn-tool.ts)", "openclaw_tool_name": "sessions_spawn",
+    "primary_execution_type": "long_running_process", "primary_classification_confidence": 0.9,
+    "edge_cases": [
+      { "condition": "Spawned subagent is a simple one-shot query with no tools", "actual_execution_type": "idempotent_read", "detection_signal": "Spawn config has no tools enabled and task is a question", "why_primary_is_wrong": "One-shot query subagent doesn't need long-running orchestration", "temporal_primitive_override": "Activity (short-lived)", "thinking_cost_override": "Per child" },
+      { "condition": "Spawned subagent has its own tool access and can modify state", "actual_execution_type": "long_running_process", "detection_signal": "Spawn config enables tools; task involves file modification or API calls", "why_primary_is_wrong": "Classification correct but child must have its own budget cap and circuit breaker", "temporal_primitive_override": "Child workflow, ParentClosePolicy: ABANDON", "thinking_cost_override": "Per child" }
+    ],
+    "conditional_classification_tree": { "default": "long_running_process -> Child workflow (ABANDON)" },
+    "static_classification_sufficient": true, "runtime_inference_required": false,
+    "runtime_inference_signals": [],
+    "execution_block": { "type": "long_running_process", "temporal": { "childWorkflow": true, "parentClosePolicy": "ABANDON" }, "compensation": { "tool": "cancel_child" }, "cost": { "thinkingCost": "per_child" } }
+  },
+  {
+    "skill_name": "stripe-payments", "skill_rank": 30, "source": "Plugin / MCP", "openclaw_tool_name": "varies",
+    "primary_execution_type": "critical_transaction", "primary_classification_confidence": 0.95,
+    "edge_cases": [
+      { "condition": "Action is list charges, get balance, retrieve customer (read-only)", "actual_execution_type": "idempotent_read", "detection_signal": "Stripe API method is retrieve, list, or search", "why_primary_is_wrong": "Read-only Stripe queries are safe to cache and retry", "temporal_primitive_override": "Activity, cached", "thinking_cost_override": "Low" },
+      { "condition": "Charge amount exceeds configured threshold", "actual_execution_type": "critical_transaction", "detection_signal": "amount parameter exceeds budget threshold", "why_primary_is_wrong": "Classification unchanged but HITL escalation should include amount in approval display", "temporal_primitive_override": "Saga, HITL required, approval shows amount", "thinking_cost_override": "Medium" }
+    ],
+    "conditional_classification_tree": { "default": "critical_transaction -> Saga, exactly-once, HITL required", "if read-only": "idempotent_read -> Activity, cached" },
+    "static_classification_sufficient": false, "runtime_inference_required": true,
+    "runtime_inference_signals": ["Stripe API method (create vs retrieve)", "amount parameter"],
+    "execution_block": { "type": "critical_transaction", "retry": 1, "idempotency": { "key": "charge_id", "exactlyOnce": true }, "compensation": { "tool": "RefundCharge" }, "hitl": "required", "cost": { "thinkingCost": "medium" } }
+  },
+  { "skill_name": "exa-semantic-search", "skill_rank": 21, "source": "Plugin / MCP", "openclaw_tool_name": "varies", "primary_execution_type": "idempotent_read", "primary_classification_confidence": 0.99, "edge_cases": [{ "condition": "Search API rate limited", "actual_execution_type": "idempotent_read", "detection_signal": "HTTP 429", "why_primary_is_wrong": "Retry with backoff", "temporal_primitive_override": "None", "thinking_cost_override": "Low" }, { "condition": "Results contain paywalled content", "actual_execution_type": "idempotent_read", "detection_signal": "Not detectable", "why_primary_is_wrong": "Content quality issue, not type change", "temporal_primitive_override": "None", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached" }, "static_classification_sufficient": true, "runtime_inference_required": false, "runtime_inference_signals": [], "execution_block": { "type": "idempotent_read", "cache": { "enabled": true, "ttl": 300 }, "cost": { "thinkingCost": "low" } } },
+  { "skill_name": "mysql-operations", "skill_rank": 22, "source": "Plugin / MCP", "openclaw_tool_name": "varies", "primary_execution_type": "idempotent_read", "primary_classification_confidence": 0.6, "edge_cases": [{ "condition": "SQL contains write keywords", "actual_execution_type": "side_effect_mutation", "detection_signal": "SQL keyword analysis", "why_primary_is_wrong": "Same as PostgreSQL #12", "temporal_primitive_override": "Activity, keyed + transaction", "thinking_cost_override": "Low" }, { "condition": "SQL is DDL", "actual_execution_type": "critical_transaction", "detection_signal": "DDL keywords", "why_primary_is_wrong": "Same as PostgreSQL #12", "temporal_primitive_override": "Saga, HITL", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "idempotent_read", "if write": "side_effect_mutation", "if DDL": "critical_transaction" }, "static_classification_sufficient": false, "runtime_inference_required": true, "runtime_inference_signals": ["SQL keyword analysis"], "execution_block": { "type": "idempotent_read", "retry": 3, "cost": { "thinkingCost": "low" } } },
+  { "skill_name": "docker-container", "skill_rank": 23, "source": "Plugin / sandbox backend", "openclaw_tool_name": "varies", "primary_execution_type": "side_effect_mutation", "primary_classification_confidence": 0.85, "edge_cases": [{ "condition": "Action is docker ps, docker logs, docker inspect (read-only)", "actual_execution_type": "idempotent_read", "detection_signal": "Docker subcommand is ps, logs, inspect, images", "why_primary_is_wrong": "Read-only Docker queries", "temporal_primitive_override": "Activity, cached", "thinking_cost_override": "Low" }, { "condition": "Action is docker rm --force on running container", "actual_execution_type": "critical_transaction", "detection_signal": "docker rm with --force on running container ID", "why_primary_is_wrong": "Destructive; data in container may be lost", "temporal_primitive_override": "Activity, HITL optional", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "side_effect_mutation -> Activity, idempotency key" }, "static_classification_sufficient": false, "runtime_inference_required": true, "runtime_inference_signals": ["Docker subcommand"], "execution_block": { "type": "side_effect_mutation", "retry": 2, "compensation": { "tool": "docker_rm_or_stop" }, "cost": { "thinkingCost": "low" } } },
+  { "skill_name": "mongodb-operations", "skill_rank": 24, "source": "Plugin / MCP", "openclaw_tool_name": "varies", "primary_execution_type": "idempotent_read", "primary_classification_confidence": 0.6, "edge_cases": [{ "condition": "Operation is insertOne, updateMany, deleteMany", "actual_execution_type": "side_effect_mutation", "detection_signal": "Method name contains insert, update, delete, drop", "why_primary_is_wrong": "Write operations mutate data", "temporal_primitive_override": "Activity, keyed", "thinking_cost_override": "Low" }, { "condition": "Operation drops collection or database", "actual_execution_type": "critical_transaction", "detection_signal": "Method is dropCollection or dropDatabase", "why_primary_is_wrong": "Destructive and irreversible", "temporal_primitive_override": "Saga, HITL required", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "idempotent_read", "if write": "side_effect_mutation", "if drop": "critical_transaction" }, "static_classification_sufficient": false, "runtime_inference_required": true, "runtime_inference_signals": ["MongoDB method name"], "execution_block": { "type": "idempotent_read", "retry": 3, "cost": { "thinkingCost": "low" } } },
+  { "skill_name": "notion-read-write", "skill_rank": 26, "source": "Plugin / MCP", "openclaw_tool_name": "varies", "primary_execution_type": "idempotent_read", "primary_classification_confidence": 0.6, "edge_cases": [{ "condition": "Action creates or updates a page/block", "actual_execution_type": "side_effect_mutation", "detection_signal": "API method is create, update, append", "why_primary_is_wrong": "Creates external content", "temporal_primitive_override": "Activity, keyed", "thinking_cost_override": "Low" }, { "condition": "Action deletes a page or database", "actual_execution_type": "critical_transaction", "detection_signal": "API method is delete or archive on database", "why_primary_is_wrong": "Destructive operation", "temporal_primitive_override": "Saga, HITL", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached", "if write": "side_effect_mutation -> Activity, keyed" }, "static_classification_sufficient": false, "runtime_inference_required": true, "runtime_inference_signals": ["API method name"], "execution_block": { "type": "idempotent_read", "cache": { "enabled": true, "ttl": 300 }, "cost": { "thinkingCost": "low" } } },
+  { "skill_name": "obsidian-vault", "skill_rank": 27, "source": "Plugin / MCP", "openclaw_tool_name": "varies", "primary_execution_type": "idempotent_read", "primary_classification_confidence": 0.99, "edge_cases": [{ "condition": "Action creates or modifies vault notes", "actual_execution_type": "side_effect_mutation", "detection_signal": "Action is create, update, delete on vault path", "why_primary_is_wrong": "Write to vault is a filesystem mutation", "temporal_primitive_override": "Activity, keyed", "thinking_cost_override": "Low" }, { "condition": "Vault is cloud-synced and write triggers sync conflict", "actual_execution_type": "side_effect_mutation", "detection_signal": "Not detectable at routing time", "why_primary_is_wrong": "Sync conflict is a quality issue", "temporal_primitive_override": "None", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached" }, "static_classification_sufficient": true, "runtime_inference_required": false, "runtime_inference_signals": [], "execution_block": { "type": "idempotent_read", "cache": { "enabled": true, "ttl": 300 }, "cost": { "thinkingCost": "low" } } },
+  { "skill_name": "sentry-error-tracking", "skill_rank": 29, "source": "Plugin / MCP", "openclaw_tool_name": "varies", "primary_execution_type": "idempotent_read", "primary_classification_confidence": 0.95, "edge_cases": [{ "condition": "Action resolves or ignores an issue", "actual_execution_type": "side_effect_mutation", "detection_signal": "API method is resolve, ignore, assign", "why_primary_is_wrong": "State change on issue tracker", "temporal_primitive_override": "Activity, keyed", "thinking_cost_override": "Low" }, { "condition": "Action deletes project or org data", "actual_execution_type": "critical_transaction", "detection_signal": "API method is delete on project/org scope", "why_primary_is_wrong": "Destructive and irreversible", "temporal_primitive_override": "Saga, HITL", "thinking_cost_override": "Low" }], "conditional_classification_tree": { "default": "idempotent_read -> Activity, cached", "if state change": "side_effect_mutation -> Activity, keyed" }, "static_classification_sufficient": false, "runtime_inference_required": true, "runtime_inference_signals": ["API method name"], "execution_block": { "type": "idempotent_read", "cache": { "enabled": true, "ttl": 300 }, "cost": { "thinkingCost": "low" } } }
+]

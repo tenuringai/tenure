@@ -1,0 +1,161 @@
+{
+  "section_a_seven_gap_closure": [
+    {
+      "gap_id": "GAP-1",
+      "community_complaint": "Cron jobs crash silently — missed runs are never recovered",
+      "community_source": "[REDDIT-BURN] r/openclaw founder thread; [ISSUE-10164] 13 upvotes, no maintainer response since Feb 2026",
+      "tenure_mechanism": "Temporal Schedule replaces in-process setTimeout. Schedule lives on Temporal Server, survives Worker death. catchupWindow policy queues missed triggers.",
+      "gap_closed": true,
+      "remaining_risk": "Catch-up window has a configurable limit (default 10 min). Triggers missed beyond the window are dropped by policy — this is intentional, not a gap.",
+      "crash_matrix_ref": "CP-013, CP-014"
+    },
+    {
+      "gap_id": "GAP-2",
+      "community_complaint": "No execution history or audit trail — no way to see what happened after a crash",
+      "community_source": "[ISSUE-10164] 'No unified view of running/pending work'; Temporal's native UI provides this",
+      "tenure_mechanism": "Temporal Event History records every Activity completion. Temporal UI shows running/pending/failed Workflows. Every action is on the timeline.",
+      "gap_closed": true,
+      "remaining_risk": "Temporal UI requires Temporal Server deployment. Local dev server provides this out of the box.",
+      "crash_matrix_ref": "All CP entries — Event History is the recovery authority"
+    },
+    {
+      "gap_id": "GAP-3",
+      "community_complaint": "Retries duplicate side effects — same Slack message sent twice, same file written twice",
+      "community_source": "[VERCEL-7261] 3-5% duplicate tool call rate with different tool call IDs; [PYDANTIC-83] read/write distinction proposed, closed as docs question",
+      "tenure_mechanism": "Completed Activities return cached results on replay. Idempotency keys prevent duplicate writes. SER router classifies reads vs writes and applies different retry policies.",
+      "gap_closed": true,
+      "remaining_risk": "External APIs without native idempotency support require application-level dedup keys. Tenure generates these but the external service must honor them.",
+      "crash_matrix_ref": "CP-004, CP-005, CP-008, CP-020"
+    },
+    {
+      "gap_id": "GAP-4",
+      "community_complaint": "Gateway restart drops all session state — in-flight work is lost",
+      "community_source": "[ISSUE-62442] Apr 7 2026, confirms session state is in-memory, not persisted. Official docs: 'Events are not replayed; clients must refresh on gaps.'",
+      "tenure_mechanism": "Tenure Workflows do not depend on Gateway for execution coordination. Temporal Server is the coordination authority. Gateway becomes a UI/notification layer.",
+      "gap_closed": true,
+      "remaining_risk": "Gateway restart still affects OpenClaw's own UI/notification delivery. Tenure only protects execution, not the chat experience.",
+      "crash_matrix_ref": "CP-016"
+    },
+    {
+      "gap_id": "GAP-5",
+      "community_complaint": "Conversation history saves to disk but doesn't reload correctly after crash",
+      "community_source": "[ISSUE-55343] 'History saves to disk but doesn't load — data exists, recovery broken'",
+      "tenure_mechanism": "Temporal Event History is the recovery authority, not .jsonl transcripts. Replay reconstructs execution state from Activity completions. OpenClaw's transcript is a secondary log.",
+      "gap_closed": true,
+      "remaining_risk": "OpenClaw's conversation display may still show gaps if .jsonl is corrupted. Tenure protects execution recovery, not conversation display.",
+      "crash_matrix_ref": "CP-010, CP-011"
+    },
+    {
+      "gap_id": "GAP-6",
+      "community_complaint": "Session memory and summaries not flushed before reset — critical context lost at the worst time",
+      "community_source": "[ISSUE-21382] 'Session memory markdown not flushed before reset'",
+      "tenure_mechanism": "Tool results are recorded as Activity completions in Temporal history BEFORE delivery to the next reasoning step. The 30-second best-effort flush is no longer the persistence path.",
+      "gap_closed": true,
+      "remaining_risk": "Compaction summaries are still non-deterministic (blocker B-2). Tenure treats compaction as a side-effecting Activity to cache the summary.",
+      "crash_matrix_ref": "CP-008, CP-011"
+    },
+    {
+      "gap_id": "GAP-7",
+      "community_complaint": "No budget cap or runaway protection — fear of max token burn",
+      "community_source": "[REDDIT-BURN] 'Tired of cron jobs crashes and fear of max token burn'",
+      "tenure_mechanism": "Budget enforcement in Workflow logic, evaluated before each Activity dispatch. Deterministic on replay — survives Worker death. Circuit breaker trips on pathological loops.",
+      "gap_closed": true,
+      "remaining_risk": "Budget tracking accuracy depends on cost data from the LLM provider. If provider cost reporting is delayed, the cap may be hit slightly late.",
+      "crash_matrix_ref": "Session 3 budget-cap and circuit-breaker proofs"
+    }
+  ],
+  "section_b_framework_failure_modes": [
+    {
+      "framework": "LangChain",
+      "failure_mode": "No durable state — agent execution lives entirely in process memory. Crash loses all progress.",
+      "tenure_test_case": "Run a multi-step LangChain agent through Tenure. SIGKILL mid-execution. Verify replay resumes from last Activity.",
+      "certification_ref": "npx tenure certify --replay",
+      "community_source": "[COMMUNITY-RESEARCH] Seven-gap table",
+      "status": "addressable"
+    },
+    {
+      "framework": "LangGraph",
+      "failure_mode": "RFC #6617 proposed five production reliability primitives (durable execution, retries, checkpointing, timeouts, observability). None shipped as of April 2026.",
+      "tenure_test_case": "All five primitives are covered: Temporal Activities (durable), retry policies (retries), Event History (checkpointing), Activity timeouts (timeouts), Temporal UI (observability).",
+      "certification_ref": "npx tenure certify --ci",
+      "community_source": "[LANGGRAPH-6617]",
+      "status": "addressable"
+    },
+    {
+      "framework": "CrewAI",
+      "failure_mode": "No crash recovery mechanism. Multi-agent orchestration is in-process only. Parent death orphans children.",
+      "tenure_test_case": "Run a multi-agent workflow with parent-child Workflows. SIGKILL parent. Verify child continues or is cleaned up per ParentClosePolicy.",
+      "certification_ref": "CP-017 test case",
+      "community_source": "[COMMUNITY-RESEARCH]",
+      "status": "addressable"
+    },
+    {
+      "framework": "AutoGen",
+      "failure_mode": "Conversation state is in-memory. No execution typing — all tool calls treated identically. No built-in retry differentiation.",
+      "tenure_test_case": "Classify tool calls through SER router. Verify reads get cached retry, writes get idempotency keys, critical transactions get HITL gates.",
+      "certification_ref": "npx tenure scan ./skills",
+      "community_source": "[COMMUNITY-RESEARCH]",
+      "status": "addressable"
+    },
+    {
+      "framework": "Google ADK",
+      "failure_mode": "No execution typing or semantic classification. Agent tools are opaque function calls with no retry differentiation.",
+      "tenure_test_case": "Same as AutoGen — SER router provides the classification layer that ADK lacks.",
+      "certification_ref": "npx tenure scan ./skills",
+      "community_source": "[COMMUNITY-RESEARCH]",
+      "status": "addressable"
+    },
+    {
+      "framework": "Pydantic AI",
+      "failure_mode": "Issue #83 proposed read/write tool distinction. Samuel Colvin closed it as a documentation question. No enforcement layer.",
+      "tenure_test_case": "SER router enforces the read/write distinction that Pydantic AI acknowledged but chose not to implement. Taxonomy provides defaults. execution: block allows authors to declare.",
+      "certification_ref": "TAXONOMY.md + npx tenure scan",
+      "community_source": "[PYDANTIC-83]",
+      "status": "addressable"
+    }
+  ],
+  "section_c_quantitative_claims": [
+    {
+      "claim": "800,000+ agent skills exist across the ecosystem",
+      "source": "SkillsMP (skillsmp.com) directory listing",
+      "primary_source_verified": false,
+      "reliability": "medium — self-reported by a marketplace aggregator, likely includes duplicates and inactive skills",
+      "how_tenure_changes_this": "Tenure does not change the count. It provides a classification layer (taxonomy + execution: block) so that any of these 800K skills can declare their execution contract."
+    },
+    {
+      "claim": "26% of community skills contain vulnerabilities",
+      "source": "[TAMING-26] arXiv 2603.11619, Mar 2026",
+      "primary_source_verified": true,
+      "reliability": "high — peer-reviewed academic paper with methodology",
+      "how_tenure_changes_this": "Tenure's SER router provides an enforcement boundary. Vulnerable skills still exist, but their execution is typed, counted, and revocable. Critical transactions require HITL approval."
+    },
+    {
+      "claim": "190 security advisories across 10 OpenClaw architectural layers",
+      "source": "[TAMU-190] arXiv 2603.27517, Mar 2026",
+      "primary_source_verified": true,
+      "reliability": "high — systematic taxonomy from Texas A&M research group",
+      "how_tenure_changes_this": "Tenure addresses the execution layer specifically. It does not fix all 190 advisories but it makes the execution boundary auditable and the side effects revocable."
+    },
+    {
+      "claim": "3-5% duplicate tool call rate in Vercel AI SDK",
+      "source": "[VERCEL-7261] github.com/vercel/ai/issues/7261",
+      "primary_source_verified": true,
+      "reliability": "high — reported by users with reproduction steps, different tool call IDs on duplicates",
+      "how_tenure_changes_this": "Temporal's deterministic replay eliminates this class of bug entirely. Completed Activities return cached results. The dedup is structural, not a fragile in-memory cache."
+    },
+    {
+      "claim": "Issue #10164 has 13 upvotes and no maintainer response",
+      "source": "[ISSUE-10164] github.com/openclaw/openclaw/issues/10164",
+      "primary_source_verified": true,
+      "reliability": "high — directly observable on GitHub",
+      "how_tenure_changes_this": "Tenure is the answer to this issue. External adapter, MIT licensed, proves the guarantee on user's own infrastructure."
+    },
+    {
+      "claim": "LangGraph RFC #6617 proposed five reliability primitives, none shipped",
+      "source": "[LANGGRAPH-6617] github.com/langchain-ai/langgraph",
+      "primary_source_verified": true,
+      "reliability": "high — RFC exists, status is observable",
+      "how_tenure_changes_this": "Tenure ships all five through Temporal: durable execution (Activities), retries (retry policies), checkpointing (Event History), timeouts (Activity timeouts), observability (Temporal UI + OTEL)."
+    }
+  ]
+}

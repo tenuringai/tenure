@@ -46,6 +46,9 @@ Read these in order before doing new work:
 7. `INSIGHTS.MD`
 8. `RESEARCH-CORPUS.MD`
 9. `CONTRADICTIONS.md`
+10. `SESSION-1-FINDINGS.md` — source-verified adapter boundary and replay proof findings
+11. `SESSION-3-CRON-DURABILITY.md` — cron durability, budget cap, and circuit breaker proofs
+12. `output/crash-recovery-matrix.json` — 21-entry crash recovery matrix (Session 2 artifact)
 
 Use `research-direction-context/` only as historical reference, not as the current source of truth.
 
@@ -105,51 +108,73 @@ Use them this way:
 
 Follow the sequence already defined in `RESEARCH-SETUP.md`.
 
-### Session 1
+### Session 1 — COMPLETE (2026-04-12)
 
 Adapter boundary and replay proof:
 
-- prove read replay works
-- model deterministic file write replay without duplication
-- document what OpenClaw persists
-- document why that state is insufficient
-- identify what Tenure must checkpoint
-- produce `PERSISTENCE-GAP.md`
+- ✓ proved read replay gap exists — tool results sit in memory with no checkpoint
+- ✓ modeled deterministic file write crash window — side effect completes, result lost
+- ✓ documented what OpenClaw persists (`.jsonl`, `jobs.json`, SQLite tasks, session store)
+- ✓ documented why that state is insufficient (conversation log ≠ execution record)
+- ✓ identified what Tenure must checkpoint (Activity result in Temporal Event History)
+- ✓ produced `PERSISTENCE-GAP.md` with source-verified evidence
+- ✓ identified 6 non-determinism risks (replay bombs) in `CONTRADICTIONS.md`
+- ✓ identified 10 crash points with severity ratings
+- ✓ identified 2 blockers (external SessionManager package, non-deterministic compaction)
+- ✓ produced `SESSION-1-FINDINGS.md` with full findings
 
-### Session 2
+Research workspace: `~/tenure-research/` (openclaw, zeitlich, temporal-ai-agent cloned)
+
+### Session 2 — COMPLETE (2026-04-12)
 
 Crash recovery matrix:
 
-- expand to 15–25 crash points
-- attach real code evidence
-- write persistence-gap explanations
-- identify blocker paths
+- ✓ expanded to 21 crash points (target: 15-25)
+- ✓ split sub-variants: file write, API call, browser session, sandbox, critical transaction
+- ✓ every entry cites concrete source files and functions
+- ✓ every entry has a candidate test case with setup, crash point, and assertion
+- ✓ cross-referenced 6 papers and 8 community evidence entries where relevant
+- ✓ 1 boundary-breaking path flagged: Gateway dedupe map (CP-020)
+- ✓ severity breakdown: 6 critical, 9 high, 3 medium, 3 low
+- ✓ produced `output/crash-recovery-matrix.json` per required schema
 
-### Session 3
+### Session 3 — COMPLETE (2026-04-12)
 
 Cron durability proof:
 
-- replace fragile in-process cron conceptually with Temporal Schedule
-- define the canonical demo
-- define the certification shape
-- define budget-cap enforcement proof
-- define circuit-breaker proof
+- ✓ defined native OpenClaw cron failure mode with source evidence (setTimeout, runMissedJobs, interruptedOneShotIds)
+- ✓ defined Temporal Schedule replacement with catch-up policy, overlap: SKIP, catchupWindow: 10 min
+- ✓ wrote canonical demo sequence: 7 steps from configure through verify, with exact expected output
+- ✓ defined certification test shape: setup, crash (SIGKILL), restart, 5 pass/fail conditions
+- ✓ defined budget-cap enforcement proof: pre-dispatch check in Workflow, budget_exhausted terminal state
+- ✓ defined circuit-breaker proof: consecutive failures + identical calls detection, escalateToHuman Activity
+- ✓ wrote public proof narrative for README, Issue #10164, and demo terminal
+- ✓ stated source of truth: triggers → Temporal Schedule, execution → Event History, OpenClaw → secondary logs
+- ✓ produced `SESSION-3-CRON-DURABILITY.md` with full findings, code examples, and certification shapes
 
-### Session 4
+### Session 4 — COMPLETE (2026-04-12)
 
 Skill durability mapping:
 
-- only after the boundary is clear
-- keep classification subordinate to execution correctness
-- bridge `execution:` / taxonomy / inference
+- ✓ mapped 30 skills with execution types grounded in proven adapter boundary
+- ✓ 60 edge cases total (2 per skill minimum) with runtime-detectable signals
+- ✓ 18/30 skills require runtime inference (per-invocation classification)
+- ✓ 12/30 skills have sufficient static classification
+- ✓ type distribution: 16 IR, 10 SM, 1 SS, 2 CT, 1 LR
+- ✓ bridged execution:/taxonomy/inference normalization into same routing contract
+- ✓ cross-referenced OpenClaw tool inventory (30 actual tools mapped from source)
+- ✓ produced `output/skill-durability-mapping.json` per required schema
 
-### Session 5
+### Session 5 — COMPLETE (2026-04-12)
 
 Community validation:
 
-- connect the engineering proof to user belief
-- strengthen README credibility
-- prepare the future Issue `#10164` story
+- ✓ built seven-gap closure matrix: all 7 community complaints mapped to Tenure mechanisms and crash points
+- ✓ mapped 6 framework failure modes (LangChain, LangGraph, CrewAI, AutoGen, Google ADK, Pydantic AI)
+- ✓ verified 6 quantitative claims with source links and reliability ratings
+- ✓ grounded draft-README.MD with community evidence: "Not Just Us" section, framework comparison table, research table
+- ✓ produced `output/community-evidence-validation.json` per required schema
+- ✓ produced `draft-README.MD` as the public-facing README with all claims source-backed
 
 ## What To Capture During Research
 
