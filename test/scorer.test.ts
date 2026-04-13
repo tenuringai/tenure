@@ -222,6 +222,52 @@ allowed-tools:
     expect(result.analysis.tools[0].toolName).toBe('web_search');
     expect(result.analysis.tools[0].resolvedViaBridge).toBe(false);
   });
+
+  it('message allowed-tool is classified via taxonomy, not SAFE_DEFAULT', () => {
+    const content = `---
+name: discord
+description: Discord ops via the message tool.
+allowed-tools:
+  - message
+---
+1. Use the message tool
+`;
+    const result = scoreFromContent(content);
+    expect(result.analysis.tools[0].toolName).toBe('message');
+    expect(result.analysis.tools[0].classifyResult.source).toBe('taxonomy');
+    expect(result.analysis.tools[0].classifyResult.config.type).toBe('side_effect_mutation');
+  });
+
+  it('missing frontmatter falls back to heading + description and still resolves bridge', () => {
+    const content = `# Canvas Skill
+
+Display HTML content on connected OpenClaw nodes (Mac app, iOS, Android).
+
+## Overview
+
+The canvas tool lets you present web content on any connected node's canvas view.
+`;
+    const result = scoreFromContent(content);
+    expect(result.skillName).toBe('canvas');
+    expect(result.analysis.frontmatterInferred).toBe(true);
+    expect(result.analysis.bridgeResolved).toBe(true);
+    expect(result.analysis.tools[0].classifyResult.source).toBe('taxonomy');
+  });
+
+  it('read-only shell wrappers get scorer-side body inference', () => {
+    const content = `---
+name: summarize
+description: Summarize or extract text/transcripts from URLs, podcasts, and local files.
+---
+1. Summarize the file
+2. Extract the transcript
+`;
+    const result = scoreFromContent(content);
+    expect(result.analysis.tools[0].toolName).toBe('shell');
+    expect(result.analysis.tools[0].inferredFromBody).toBe(true);
+    expect(result.analysis.tools[0].classifyResult.config.type).toBe('idempotent_read');
+    expect(result.totalScore).toBeGreaterThanOrEqual(50);
+  });
 });
 
 // ─── 3c. All 53 real OpenClaw skills resolve via taxonomy or bridge ──────────

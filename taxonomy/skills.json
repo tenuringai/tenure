@@ -392,6 +392,22 @@
     }
   },
   {
+    "name": "message",
+    "aliases": ["message_tool", "send_message", "chat_message"],
+    "category": "Communication",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "idempotencyKeyField": "messageId",
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
     "name": "notion",
     "aliases": ["notion_read", "notion_write", "notion-read-write"],
     "category": "Productivity",

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { parseFrontmatter } from '../parser/frontmatter';
 import { classify, resolveBridge, bridgeVersion as getBridgeVersion, bridgeSize } from '../router';
 import { lookupSkill, knowledgeBaseSize } from './knowledge-base';
+import { extractToolMentionsFromBody, inferExecutionFromBody, inferSkillMetadataFromBody } from './inference';
 import { evaluate } from './evaluator';
 import { renderScore, renderBatchSummary } from './renderer';
 import type { ScoreResult, SkillAnalysis, ToolAnalysis, BatchSummary } from './types';
@@ -150,6 +151,7 @@ function analyzeSkill(content: string): SkillAnalysis {
   let allowedTools: string[];
   let executionBlock: Record<string, unknown> | null = null;
   let hasExecutionBlock = false;
+  let frontmatterInferred = false;
 
   try {
     const frontmatter = parseFrontmatter(content);
@@ -161,9 +163,11 @@ function analyzeSkill(content: string): SkillAnalysis {
       hasExecutionBlock = true;
     }
   } catch {
-    name = 'unknown';
-    description = '';
-    allowedTools = [];
+    const inferred = inferSkillMetadataFromBody(content);
+    name = inferred?.name ?? 'unknown';
+    description = inferred?.description ?? '';
+    allowedTools = extractToolMentionsFromBody(content);
+    frontmatterInferred = inferred !== null;
   }
 
   // Also try to find the skill in the knowledge base by name.
@@ -182,6 +186,13 @@ function analyzeSkill(content: string): SkillAnalysis {
       if (!t.startsWith('varies') && !t.startsWith('N/A')) {
         toolNames.add(t);
       }
+    }
+  }
+
+  // If the skill body explicitly mentions known tools, count those too.
+  if (toolNames.size === 0) {
+    for (const t of extractToolMentionsFromBody(content)) {
+      toolNames.add(t);
     }
   }
 
@@ -210,9 +221,18 @@ function analyzeSkill(content: string): SkillAnalysis {
   // Classify each tool.
   const tools: ToolAnalysis[] = [];
   for (const toolName of toolNames) {
-    const classifyResult = classify(toolName, {});
+    let classifyResult = classify(toolName, {});
     const toolKb = lookupSkill(toolName);
     const isBridged = bridgeSourceMap.has(toolName);
+    const inferred = inferExecutionFromBody(toolName, classifyResult, description, content);
+
+    if (inferred) {
+      classifyResult = {
+        ...classifyResult,
+        config: inferred.config,
+        reason: `${classifyResult.reason}; ${inferred.reason}`,
+      };
+    }
 
     tools.push({
       toolName,
@@ -225,6 +245,8 @@ function analyzeSkill(content: string): SkillAnalysis {
       hasConditionalTree: toolKb ? Object.keys(toolKb.conditional_classification_tree ?? {}).length > 1 : false,
       resolvedViaBridge: isBridged,
       bridgeSourceSkill: isBridged ? bridgeSourceMap.get(toolName) : undefined,
+      inferredFromBody: inferred !== null,
+      inferenceReason: inferred?.reason,
     });
   }
 
@@ -242,6 +264,7 @@ function analyzeSkill(content: string): SkillAnalysis {
     executionBlock,
     bridgeResolved,
     bridgeVersion: bridgeVer,
+    frontmatterInferred,
   };
 }
 

@@ -26,7 +26,7 @@ function assertType(toolName: string, expectedType: ExecutionType, params: Recor
   assert(`classify("${toolName}") → ${expectedType}`, result.config.type, expectedType);
 }
 
-function assertSource(toolName: string, expectedSource: 'taxonomy' | 'conditional' | 'default', params: Record<string, unknown> = {}): void {
+function assertSource(toolName: string, expectedSource: 'taxonomy' | 'conditional' | 'bridge' | 'default', params: Record<string, unknown> = {}): void {
   const result = classify(toolName, params);
   assert(`classify("${toolName}") source → ${expectedSource}`, result.source, expectedSource);
 }
@@ -35,7 +35,7 @@ console.log('\n=== Tenure SER Router — Behavior Test ===\n');
 
 // ── Taxonomy size ─────────────────────────────────────────────────────────────
 console.log('[1] Taxonomy load');
-assert('taxonomy has 50 entries', taxonomySize(), 50);
+assert('taxonomy has 51 entries', taxonomySize(), 51);
 assert('lookupTaxonomy("stripe") not null', lookupTaxonomy('stripe') !== null, true);
 assert('lookupTaxonomy("UNKNOWN_TOOL_XYZ") is null', lookupTaxonomy('UNKNOWN_TOOL_XYZ'), null);
 
@@ -71,6 +71,7 @@ assertType('python-repl', 'side_effect_mutation');
 assertType('desktop-commander', 'side_effect_mutation');
 assertType('docker', 'side_effect_mutation');
 assertType('slack', 'side_effect_mutation');
+assertType('message', 'side_effect_mutation');
 assertType('task-manager', 'side_effect_mutation');
 assertType('cloudflare', 'side_effect_mutation');
 assertType('aws', 'side_effect_mutation');
@@ -171,6 +172,10 @@ assertType('github-api', 'side_effect_mutation', { action: 'merge', base: 'featu
 // Slack: normal send → side_effect_mutation
 assertType('slack', 'side_effect_mutation', { message: 'hello' });
 assertSource('slack', 'taxonomy', { message: 'hello' });
+
+// Message tool: generic messaging defaults to side_effect_mutation
+assertType('message', 'side_effect_mutation', { channel: 'discord', text: 'hello' });
+assertSource('message', 'taxonomy', { channel: 'discord', text: 'hello' });
 
 // Slack: waitForReply → human_interactive
 assertType('slack', 'human_interactive', { message: 'hello', waitForReply: true });

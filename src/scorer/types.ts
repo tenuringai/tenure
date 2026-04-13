@@ -91,6 +91,10 @@ export interface ToolAnalysis {
   resolvedViaBridge: boolean;
   /** The original skill name that resolved to this tool, if bridge-resolved. */
   bridgeSourceSkill?: string;
+  /** Whether scorer-only body heuristics refined this tool's execution semantics. */
+  inferredFromBody: boolean;
+  /** Human-readable explanation of the body-derived inference. */
+  inferenceReason?: string;
 }
 
 /**
@@ -112,6 +116,8 @@ export interface SkillAnalysis {
   bridgeResolved: boolean;
   /** Bridge version used for resolution (e.g. "0.1.0"). */
   bridgeVersion?: string;
+  /** Whether name/description were recovered from body text instead of frontmatter. */
+  frontmatterInferred: boolean;
 }
 
 /**
