@@ -22,10 +22,11 @@ tenure/
 │
 ├── src/
 │   ├── cli/                           # CLI entry points
-│   │   ├── index.ts                   # Main CLI router (connect | certify | scan | extend)
+│   │   ├── index.ts                   # Main CLI router (connect | certify | scan | demo | extend)
 │   │   ├── connect.ts                 # `tenure connect openclaw`
 │   │   ├── certify.ts                 # `tenure certify [--demo cron] [--ci]`
 │   │   ├── scan.ts                    # `tenure scan ./skills`
+│   │   ├── demo.ts                    # `tenure demo --standalone` (Task 2.5)
 │   │   └── extend.ts                  # `tenure extend ./skill/SKILL.md` (Phase 2)
 │   │
 │   ├── adapter/                       # OpenClaw adapter (Task 2 — the bottleneck)
@@ -119,32 +120,43 @@ tenure/
 ## Build Order — Critical Path
 
 ```
-                    Task 1: Temporal setup
-                         │ (1 hour)
-                         ▼
-                    Task 2: OpenClaw adapter ◄── BOTTLENECK
-                         │ (2-3 days)
-                         │
-          ┌──────────────┼──────────────┬───────────────┐
-          ▼              ▼              ▼               ▼
-     Task 3:        Task 4:        Task 7:         Task 8:
-     SER router     Cron replace   Scanner         CLI packaging
-     (1 day)        (1 day)        (1 day)         (half day)
-          │              │
-          └──────┬───────┘
-                 ▼
-            Task 5: Cron demo + crash recovery test
-                 │ (1 day)
-                 ▼
-            Task 6: No-duplicate test
-                 │ (1 day)
-                 ▼
-            ═══════════════════
-            SHIP. COMMENT. DONE.
-            ═══════════════════
+                         Task 1: Temporal setup
+                              │ (1 hour)
+                              ▼
+                         Task 2: OpenClaw adapter ◄── BOTTLENECK
+                              │ (2-3 days)
+                              │
+               ┌──────────────┴──────────────┐
+               ▼                             ▼
+          Task 2.5:                    ┌─────┴─────┬─────────────┬───────────────┐
+          Standalone demo              ▼           ▼             ▼               ▼
+          (half day)              Task 3:     Task 4:       Task 7:         Task 8:
+               │                  SER router  Cron replace  Scanner         CLI packaging
+               │                  (1 day)     (1 day)       (1 day)         (half day)
+               │                       │           │
+               │                       └─────┬─────┘
+               │                             ▼
+               │                        Task 5: Cron demo + crash recovery test
+               │                             │ (1 day)
+               │                             ▼
+               │                        Task 6: No-duplicate test
+               │                             │ (1 day)
+               ▼                             ▼
+          ═════════════════════════════════════════════════
+          PROOF SURFACE 1                PROOF SURFACE 2
+          (standalone)                   (OpenClaw integrated)
+          ═════════════════════════════════════════════════
+                              │
+                              ▼
+                    SHIP. COMMENT. DONE.
 ```
 
-Tasks 3, 4, 7, 8 run in parallel after Task 2 completes.
+**Two proof surfaces for launch resilience:**
+- **Proof Surface 1** (Task 2.5): `npx tenure demo --standalone` — proves Temporal durability without OpenClaw
+- **Proof Surface 2** (Task 5+6): `npx tenure certify --demo cron` — proves full integration with OpenClaw
+
+Tasks 2.5, 3, 4, 7, 8 run in parallel after Task 2 completes.
+Task 2.5 has no dependencies beyond Task 1 — it's a fallback if OpenClaw integration is flaky.
 Tasks 5 and 6 are sequential because they depend on both the adapter and the router.
 Total calendar time with 10 agents: 5–6 days.
 
@@ -190,6 +202,106 @@ npx ts-node src/temporal/client.ts  # should connect to localhost:7233
 **Key risk:** OpenClaw's tool dispatch may not have a clean interception point. The research identified `src/agents/pi-embedded-subscribe/handlers/tools.ts` as the likely location but the exact hook mechanism depends on the code structure. If no clean hook exists, the adapter may need to monkey-patch the dispatch function.
 
 **Done when:** An OpenClaw agent runs with the adapter. Every tool call appears in Temporal's Web UI as an Activity. The agent's behavior is identical to without the adapter.
+
+---
+
+### Task 2.5: Standalone Proof Mode (half day)
+
+**Owner:** Any agent
+**Input:** Working Temporal setup from Task 1
+**Output:** `npx tenure demo --standalone` runs the cron-durability proof without OpenClaw
+
+**Why this exists:** If the OpenClaw adapter is flaky at launch, this standalone demo still proves Tenure's core value. You can post in Issue #10164 with "here's the proof, adapter integration coming." The launch doesn't depend on hook stability.
+
+**What it does:**
+1. Mock agent loop (no OpenClaw, no real LLM)
+2. Temporal Schedule triggers every 10 seconds
+3. Activity appends timestamped line to `proof.log`
+4. Run 3 cycles (3 lines)
+5. SIGKILL the Worker
+6. Wait 20 seconds (2 missed cycles)
+7. Restart Worker
+8. Verify: 6 lines, sequential, 0 gaps, 0 dupes
+
+```typescript
+// src/cli/demo.ts
+export async function runStandaloneDemo(): Promise<DemoResult> {
+  console.log('[tenure] Starting standalone cron-durability proof...');
+  
+  // 1. Start Temporal Schedule (10s interval, not 60s — faster demo)
+  const schedule = await client.schedule.create({
+    scheduleId: 'tenure-standalone-demo',
+    spec: { intervals: [{ every: '10s' }] },
+    action: {
+      type: 'startWorkflow',
+      workflowType: appendLineWorkflow,
+      args: [{ logFile: 'proof.log' }],
+      taskQueue: TASK_QUEUE,
+    },
+    policies: { catchupWindow: '5m', overlap: 'SKIP' },
+  });
+
+  // 2. Run 3 cycles
+  await sleep(35_000); // 3 triggers at 10s each + buffer
+  
+  // 3. Read baseline
+  const baseline = await fs.readFile('proof.log', 'utf-8');
+  const baselineLines = baseline.trim().split('\n').length;
+  console.log(`[tenure] Baseline: ${baselineLines} lines`);
+
+  // 4. SIGKILL the Worker (simulate crash)
+  process.kill(workerPid, 'SIGKILL');
+  console.log('[tenure] Worker killed (SIGKILL)');
+
+  // 5. Wait 20s (2 missed cycles)
+  await sleep(20_000);
+
+  // 6. Restart Worker
+  const newWorkerPid = await startWorker();
+  console.log(`[tenure] Worker restarted (PID: ${newWorkerPid})`);
+
+  // 7. Wait for catch-up
+  await sleep(15_000);
+
+  // 8. Verify
+  const final = await fs.readFile('proof.log', 'utf-8');
+  const finalLines = final.trim().split('\n');
+  const result = verifyProof(finalLines);
+  
+  console.log(`\n[tenure] ✓ CRON DURABILITY PROOF`);
+  console.log(`         Lines: ${finalLines.length} (expected 6)`);
+  console.log(`         Gaps: ${result.gaps}`);
+  console.log(`         Dupes: ${result.dupes}`);
+  console.log(`         Sequential: ${result.sequential ? 'YES' : 'NO'}`);
+  
+  return result;
+}
+```
+
+**CLI:**
+```bash
+$ npx tenure demo --standalone
+
+[tenure] Starting standalone cron-durability proof...
+[tenure] Schedule created: tenure-standalone-demo (every 10s)
+[tenure] Baseline: 3 lines
+[tenure] Worker killed (SIGKILL)
+[tenure] ... waiting 20s for missed cycles ...
+[tenure] Worker restarted (PID: 48291)
+[tenure] ... waiting for catch-up ...
+
+[tenure] ✓ CRON DURABILITY PROOF
+         Lines: 6 (expected 6)
+         Gaps: 0
+         Dupes: 0
+         Sequential: YES
+```
+
+**Two proof surfaces after this task:**
+1. `npx tenure demo --standalone` — proves Temporal layer works (no OpenClaw)
+2. `npx tenure certify --demo cron` — proves Tenure works with OpenClaw (Task 5)
+
+**Done when:** `npx tenure demo --standalone` produces passing output. The demo is deterministic and copy-pasteable for Issue #10164.
 
 ---
 
@@ -376,17 +488,27 @@ switch (command) {
 
 All of these must be true before you post the Issue #10164 comment:
 
+**Proof Surface 1 (standalone — minimum viable launch):**
+- [ ] `npx tenure demo --standalone` produces the cron-durability proof, passing
+- [ ] Demo is deterministic and copy-pasteable for Issue #10164
+- [ ] npm package published as `tenure@0.1.0`
+- [ ] README (v0.5) is in the repo with cron proof, issue citations, research links
+- [ ] MIT LICENSE file present
+- [ ] Repo is public at github.com/tenured/tenure
+
+**Proof Surface 2 (OpenClaw integrated — full launch):**
 - [ ] `npx tenure connect openclaw` installs the hook on a real OpenClaw instance
 - [ ] Agent runs identically with adapter — no behavior change
 - [ ] Every tool call appears as a Temporal Activity in the Temporal Web UI
 - [ ] `npx tenure certify --demo cron` produces the 6-line proof, passing
 - [ ] `npx tenure certify --ci` passes crash-recovery and no-duplicate
 - [ ] `npx tenure scan ./skills` classifies sample skills correctly
-- [ ] npm package published as `tenure@0.1.0`
-- [ ] README (v0.5) is in the repo with cron proof, issue citations, research links
 - [ ] TAXONOMY.md has 30 classified skills
-- [ ] MIT LICENSE file present
-- [ ] Repo is public at github.com/tenured/tenure
+
+**Launch strategy:**
+If Proof Surface 2 is blocked by OpenClaw hook instability, ship Proof Surface 1 first.
+Post in Issue #10164: "Standalone proof works, OpenClaw adapter integration in progress."
+This preserves the launch window.
 
 **Not required for side door:**
 - [ ] `tenure extend` (Phase 2)

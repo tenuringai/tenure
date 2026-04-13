@@ -1,5 +1,5 @@
 import { Client, Connection } from '@temporalio/client';
-import { agentSessionWorkflow, executeToolSignal } from './workflows/agent-session';
+import { agentSessionWorkflow, dispatchToolUpdate, shutdownSignal } from './workflows/agent-session';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -9,8 +9,12 @@ const TASK_QUEUE = 'tenure-task-queue';
 /**
  * Demonstrates the Tenure execution model from the client side:
  * 1. Start a long-lived agent session Workflow
- * 2. Send a tool call via Signal (the adapter hook pattern)
- * 3. Wait for the Workflow to complete and return the Activity result
+ * 2. Send a tool call via Update (the adapter hook pattern — blocks until Activity completes)
+ * 3. Receive the Activity result via the Update response
+ * 4. Send shutdown Signal to end the session
+ *
+ * This is a development/test client. In production, use tenureConnect() which
+ * wraps tool.execute and manages this flow automatically.
  */
 async function run(): Promise<void> {
   const connection = await Connection.connect({ address: TEMPORAL_ADDRESS });
@@ -24,35 +28,35 @@ async function run(): Promise<void> {
   console.log(`[Client] Workflow ID: ${workflowId}`);
   console.log(`[Client] Temporal address: ${TEMPORAL_ADDRESS}`);
 
-  // Start the Workflow — it will wait for a tool call Signal before executing.
-  // In Task 2, the adapter hook does this once per OpenClaw session, then
-  // sends tool calls via Signal for each intercepted tool call.
+  // Start the Workflow — it waits for tool call Updates before executing.
   const handle = await client.workflow.start(agentSessionWorkflow, {
     taskQueue: TASK_QUEUE,
     workflowId,
     args: [{ sessionId }],
   });
 
-  console.log(`[Client] Workflow started — sending tool call Signal`);
+  console.log(`[Client] Workflow started — dispatching tool call via Update`);
 
-  // Send the tool call via Signal — this is the adapter hook pattern.
-  // The moment Temporal acknowledges this Signal, the tool call is on the timeline.
-  await handle.signal(executeToolSignal, {
-    filePath,
-    content: `hello from tenure — session ${sessionId}`,
+  // Dispatch a tool call via Update — this is the adapter hook pattern.
+  // The Update blocks until the Activity completes and returns the result.
+  // Once Temporal Server acknowledges the Update, the call is on the durable timeline.
+  const response = await handle.executeUpdate(dispatchToolUpdate, {
+    args: [{
+      toolCallId: `tc-${Date.now()}`,
+      toolName: 'mock-file-write',
+      params: { filePath, content: `hello from tenure — session ${sessionId}` },
+    }],
   });
 
-  console.log(`[Client] Signal sent — waiting for Workflow to complete`);
+  console.log(`\n[Client] Tool call completed`);
+  console.log(`[Client] Tool call ID:     ${response.toolCallId}`);
+  console.log(`[Client] Duration:         ${response.durationMs}ms`);
+  console.log(`[Client] Result content:   ${JSON.stringify(response.result.content)}`);
+  console.log(`[Client] Result details:   ${JSON.stringify(response.result.details)}`);
 
-  // Wait for the Workflow result (blocks until Activity completes).
-  const result = await handle.result();
-
-  console.log(`\n[Client] Workflow completed`);
-  console.log(`[Client] Session ID:        ${result.sessionId}`);
-  console.log(`[Client] Tool calls:        ${result.completedToolCalls}`);
-  console.log(`[Client] File written to:   ${result.lastResult?.filePath}`);
-  console.log(`[Client] SHA-256:           ${result.lastResult?.hash}`);
-  console.log(`[Client] Written:           ${result.lastResult?.written}`);
+  // Send shutdown Signal to end the session Workflow.
+  await handle.signal(shutdownSignal);
+  console.log(`[Client] Session shutdown signalled`);
 }
 
 run().catch((err: Error) => {

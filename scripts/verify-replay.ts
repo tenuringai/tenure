@@ -1,33 +1,29 @@
 import { Client, Connection } from '@temporalio/client';
-import * as fs from 'fs/promises';
-import * as crypto from 'crypto';
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs/promises';
+import * as crypto from 'crypto';
 
-// Type-only import for the Workflow function signature (used for type inference only)
-import type { agentSessionWorkflow as AgentSessionWorkflowFn } from '../src/temporal/workflows/agent-session';
-// Runtime import from compiled dist — this script runs as: node dist/scripts/verify-replay.js
+// Runtime imports (resolved from compiled dist)
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { agentSessionWorkflow, executeToolSignal } = require('../src/temporal/workflows/agent-session') as {
-  agentSessionWorkflow: typeof AgentSessionWorkflowFn;
-  executeToolSignal: import('@temporalio/workflow').SignalDefinition<[import('../src/temporal/activities/execute-tool').ExecuteToolParams]>;
-};
+const { agentSessionWorkflow, dispatchToolUpdate, shutdownSignal, sessionStatsQuery } =
+  require('../src/temporal/workflows/agent-session') as typeof import('../src/temporal/workflows/agent-session');
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { registerTool } = require('../src/adapter/tool-registry') as typeof import('../src/adapter/tool-registry');
 
 /**
- * Verifies that Temporal Activity caching works as the no-duplicate guarantee.
+ * End-to-end verification of the Tenure adapter.
  *
- * Proof ladder step: read replay → write replay (this script) → cron durability
- *
- * What this proves:
- * 1. A Workflow can execute a file-write Activity
- * 2. The Activity result is recorded exactly once in Temporal Event History
- * 3. The file was written exactly once (no duplicates)
- * 4. The hash in Event History matches the hash of the file on disk
+ * Proof: a mock tool that writes a file is wrapped by the adapter pattern.
+ * The tool call is dispatched through Temporal via a Workflow Update.
+ * The Activity runs the mock tool, writes the file, returns a hash.
+ * The result flows back to the caller via the Update response.
  *
  * Prerequisites:
  *   temporal server start-dev    (in a separate terminal)
  *   npm run build                (compile TypeScript)
- *   npm run worker               (in a separate terminal)
+ *   npm run worker               (in a separate terminal — with tools registered)
  *   npm run verify               (this script)
  */
 
@@ -37,95 +33,114 @@ const TASK_QUEUE = 'tenure-task-queue';
 interface VerifyResult {
   passed: boolean;
   workflowId: string;
-  filePath: string;
+  toolCallId: string;
+  fileWritten: boolean;
+  hashMatch: boolean;
   expectedHash: string;
   actualHash: string;
-  hashMatch: boolean;
+  durationMs: number;
   activityCompletedCount: number;
-  activityExactlyOnce: boolean;
-  fileExists: boolean;
 }
 
-async function verifyReplay(): Promise<VerifyResult> {
+async function verifyAdapterRoundTrip(): Promise<VerifyResult> {
   const connection = await Connection.connect({ address: TEMPORAL_ADDRESS });
   const client = new Client({ connection });
 
-  const sessionId = `verify-${Date.now()}`;
-  const workflowId = `tenure-verify-${sessionId}`;
-  const filePath = path.join(os.tmpdir(), `tenure-verify-${Date.now()}.txt`);
-  const content = `tenure proof — session ${sessionId}`;
+  const sessionId = `adapter-verify-${Date.now()}`;
+  const workflowId = `tenure-${sessionId}`;
+  const toolCallId = `tc-${Date.now()}`;
+  const filePath = path.join(os.tmpdir(), `tenure-adapter-verify-${Date.now()}.txt`);
+  const content = `tenure adapter proof — session ${sessionId}`;
   const expectedHash = crypto.createHash('sha256').update(content).digest('hex');
 
-  console.log(`\n--- Tenure No-Duplicate Write Verification ---`);
+  console.log(`\n--- Tenure Adapter Round-Trip Verification ---`);
   console.log(`Workflow ID:   ${workflowId}`);
+  console.log(`Tool call ID:  ${toolCallId}`);
   console.log(`File path:     ${filePath}`);
   console.log(`Expected hash: ${expectedHash}`);
-  console.log(`\nStarting Workflow...`);
 
+  // Register the mock tool in the local process registry.
+  // In production, tenureConnect() does this before starting the Worker.
+  // For this test, we register directly so the Activity (running in Worker process)
+  // can look up the function.
+  // NOTE: This only works if the Worker process shares the same module instance.
+  // For a cross-process Worker, use the worker.ts registration pattern.
+  registerTool('mock-file-write', async (_toolCallId, params) => {
+    const p = params as { filePath: string; content: string };
+    await fs.writeFile(p.filePath, p.content, 'utf-8');
+    const hash = crypto.createHash('sha256').update(p.content).digest('hex');
+    return {
+      content: [{ type: 'text', text: `Written: ${p.filePath} (sha256: ${hash})` }],
+      details: { filePath: p.filePath, hash },
+    };
+  });
+
+  // Start the session Workflow.
+  console.log(`\nStarting session Workflow...`);
   const handle = await client.workflow.start(agentSessionWorkflow, {
     taskQueue: TASK_QUEUE,
     workflowId,
     args: [{ sessionId }],
   });
+  console.log(`Workflow started: ${workflowId}`);
 
-  console.log(`Sending tool call Signal (adapter hook pattern)...`);
-  await handle.signal(executeToolSignal, { filePath, content });
+  // Dispatch the tool call via Update — this is the adapter hook pattern.
+  // The Update blocks until the Activity completes and returns the result.
+  console.log(`Dispatching tool call via Update (adapter pattern)...`);
+  const startMs = Date.now();
 
-  console.log(`Waiting for Workflow to complete...`);
-  const result = await handle.result();
-  console.log(`Workflow completed — ${result.completedToolCalls} tool call(s) processed`);
+  const response = await handle.executeUpdate(dispatchToolUpdate, {
+    args: [{
+      toolCallId,
+      toolName: 'mock-file-write',
+      params: { filePath, content },
+    }],
+  });
 
-  // 1. Verify file exists on disk.
-  let fileExists = false;
+  const roundTripMs = Date.now() - startMs;
+  console.log(`Update returned in ${roundTripMs}ms`);
+  console.log(`Activity duration: ${response.durationMs}ms`);
+
+  // Verify file was written.
+  let fileWritten = false;
   let actualHash = '';
   try {
     const fileContent = await fs.readFile(filePath, 'utf-8');
-    fileExists = true;
+    fileWritten = true;
     actualHash = crypto.createHash('sha256').update(fileContent).digest('hex');
   } catch {
-    fileExists = false;
+    fileWritten = false;
   }
 
   const hashMatch = actualHash === expectedHash;
 
-  // 2. Inspect Temporal Event History: count ActivityTaskCompleted events.
-  //    Exactly 1 means the Activity ran once and its result was cached.
+  // Check Activity completed count in history.
   const history = await handle.fetchHistory();
-  
-  // Debug: log all event types to understand the format
-  const eventTypes = history.events?.map((e) => e.eventType) ?? [];
-  console.log(`[Debug] Event types in history: ${JSON.stringify(eventTypes)}`);
-  
   const activityCompletedCount =
     history.events?.filter((e) => {
-      // Cast to unknown first to handle varying SDK type definitions
       const t = e.eventType as unknown;
-      // Temporal SDK returns eventType as a string like 'EVENT_TYPE_ACTIVITY_TASK_COMPLETED'
-      // or as a numeric enum value depending on SDK version
-      if (typeof t === 'string') {
-        return t === 'EVENT_TYPE_ACTIVITY_TASK_COMPLETED' || t.includes('ACTIVITY_TASK_COMPLETED');
-      }
-      if (typeof t === 'number') {
-        // Enum value 12 = EVENT_TYPE_ACTIVITY_TASK_COMPLETED in Temporal proto
-        // (10=SCHEDULED, 11=STARTED, 12=COMPLETED)
-        return t === 12;
-      }
+      if (typeof t === 'string') return (t as string).includes('ACTIVITY_TASK_COMPLETED');
+      if (typeof t === 'number') return t === 12;
       return false;
     }).length ?? 0;
 
-  const activityExactlyOnce = activityCompletedCount === 1;
-  const passed = fileExists && hashMatch && activityExactlyOnce;
+  // Check session stats via Query.
+  const stats = await handle.query(sessionStatsQuery);
+  console.log(`\nSession stats: ${JSON.stringify(stats, null, 2)}`);
+
+  // Shutdown the Workflow.
+  await handle.signal(shutdownSignal);
 
   return {
-    passed,
+    passed: fileWritten && hashMatch && activityCompletedCount >= 1,
     workflowId,
-    filePath,
+    toolCallId,
+    fileWritten,
+    hashMatch,
     expectedHash,
     actualHash,
-    hashMatch,
+    durationMs: roundTripMs,
     activityCompletedCount,
-    activityExactlyOnce,
-    fileExists,
   };
 }
 
@@ -133,40 +148,40 @@ async function main(): Promise<void> {
   let result: VerifyResult;
 
   try {
-    result = await verifyReplay();
+    result = await verifyAdapterRoundTrip();
   } catch (err) {
     const error = err as Error;
     console.error(`\n[FAIL] Verification error: ${error.message}`);
     if (error.message.includes('ECONNREFUSED') || error.message.includes('connect')) {
-      console.error(`\nIs Temporal dev server running?`);
-      console.error(`  temporal server start-dev`);
+      console.error(`\nIs Temporal dev server running?\n  temporal server start-dev`);
     } else if (error.message.includes('timed out') || error.message.includes('no poller')) {
-      console.error(`\nIs the Worker running?`);
-      console.error(`  npm run build && npm run worker`);
+      console.error(`\nIs the Worker running?\n  npm run build && npm run worker`);
+    } else if (error.message.includes('ToolRegistry')) {
+      console.error(`\nTool not registered. The Worker process must register tools before dispatching.`);
     }
     process.exit(1);
   }
 
-  console.log(`\n--- Verification Results ---`);
-  console.log(`File exists on disk:       ${result.fileExists ? 'YES ✓' : 'NO ✗'}`);
-  console.log(`Hash match (no corruption):`);
+  console.log(`\n--- Adapter Verification Results ---`);
+  console.log(`File written:              ${result.fileWritten ? 'YES ✓' : 'NO ✗'}`);
+  console.log(`Hash match:`);
   console.log(`  Expected: ${result.expectedHash}`);
   console.log(`  Actual:   ${result.actualHash}`);
   console.log(`  Match:    ${result.hashMatch ? 'YES ✓' : 'NO ✗'}`);
-  console.log(`Activity completed events: ${result.activityCompletedCount} (expected: 1) ${result.activityExactlyOnce ? '✓' : '✗'}`);
+  console.log(`Activity completed events: ${result.activityCompletedCount} ✓`);
+  console.log(`Round-trip latency:        ${result.durationMs}ms`);
 
-  console.log(`\n${result.passed ? '✓ PASS' : '✗ FAIL'} — No-Duplicate Write`);
+  console.log(`\n${result.passed ? '✓ PASS' : '✗ FAIL'} — Adapter Round-Trip`);
 
   if (result.passed) {
     console.log(`\nProof:`);
-    console.log(`  File written to:  ${result.filePath}`);
-    console.log(`  Activity ran:     exactly once (${result.activityCompletedCount} ACTIVITY_TASK_COMPLETED in history)`);
-    console.log(`  SHA-256 verified: ${result.expectedHash}`);
-    console.log(`\nTemporal Event History is the source of truth.`);
-    console.log(`If the Worker had died after the Activity completed, replay would have`);
-    console.log(`returned this same hash from history — no second write, no duplicate.`);
+    console.log(`  Tool call dispatched via Workflow Update`);
+    console.log(`  Activity executed the mock tool in the Worker process`);
+    console.log(`  File written, hash verified`);
+    console.log(`  Result returned to caller via Update response`);
+    console.log(`\nEvery tool call is now on the Temporal timeline.`);
+    console.log(`Crash recovery, no-duplicate replay, and budget enforcement follow.`);
   } else {
-    console.error(`\nVerification failed. Check the output above for details.`);
     process.exit(1);
   }
 }

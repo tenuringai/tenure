@@ -1,0 +1,783 @@
+[
+  {
+    "name": "sequential-thinking",
+    "aliases": ["think", "sequential_thinking", "mcp-sequentialthinking"],
+    "category": "Reasoning",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 300000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "shell",
+    "aliases": ["bash", "shell-execution", "run_command", "execute_command", "bash_execution"],
+    "category": "System",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": null,
+      "hitl": "optional",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "file-read",
+    "aliases": ["read_file", "readfile", "read-file", "cat", "file_read"],
+    "category": "Filesystem",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "file-write",
+    "aliases": ["write_file", "writefile", "write-file", "create_file", "file_write"],
+    "category": "Filesystem",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "idempotencyKeyField": "path",
+      "compensation": "delete-file",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "file-edit",
+    "aliases": ["edit_file", "editfile", "str_replace", "str_replace_editor", "patch_file"],
+    "category": "Filesystem",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "idempotencyKeyField": "path",
+      "compensation": "revert-file",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "github-api",
+    "aliases": ["github", "gh", "github_api", "create_pull_request", "create_issue", "github-pr"],
+    "category": "Version Control",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "close-pr",
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "web-search",
+    "aliases": ["brave_search", "tavily", "ddg", "duckduckgo", "search", "web_search", "brave-search"],
+    "category": "Research",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "web-fetch",
+    "aliases": ["fetch", "url_fetch", "web_fetch", "fetch_url", "http_get"],
+    "category": "Research",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "grep",
+    "aliases": ["ripgrep", "rg", "grep_search", "code_search", "search_code"],
+    "category": "Code Analysis",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "glob",
+    "aliases": ["glob_search", "find_files", "list_files", "file_glob"],
+    "category": "Filesystem",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "git",
+    "aliases": ["git_operations", "git-operations", "git_commit", "git_push", "git_status", "git_diff", "git_log"],
+    "category": "Version Control",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "git-revert",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "postgresql",
+    "aliases": ["postgres", "pg", "psql", "postgresql_query", "postgres_query"],
+    "category": "Database",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": true,
+      "cacheTtlMs": 60000,
+      "idempotent": true,
+      "compensation": "rollback-transaction",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "playwright",
+    "aliases": ["playwright_browser", "browser_automation", "playwright-browser"],
+    "category": "Web",
+    "config": {
+      "type": "stateful_session",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 1800000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "close-browser-session",
+      "hitl": "none",
+      "thinkingCost": "high",
+      "heartbeatIntervalMs": 30000
+    }
+  },
+  {
+    "name": "sqlite",
+    "aliases": ["sqlite_operations", "sqlite-operations", "sqlite_query"],
+    "category": "Database",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 60000,
+      "idempotent": true,
+      "compensation": "rollback-transaction",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "memory",
+    "aliases": ["mem0", "knowledge-graph", "knowledge_graph", "memory_store", "add_memory"],
+    "category": "Memory",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "delete-memory-entry",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "context7",
+    "aliases": ["context_7", "docs_search", "documentation_search", "query-docs"],
+    "category": "Code Analysis",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 600000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "python-repl",
+    "aliases": ["python_repl", "code_interpreter", "repl", "python_execute", "execute_python"],
+    "category": "Execution",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": null,
+      "hitl": "optional",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "desktop-commander",
+    "aliases": ["desktop_commander", "terminal", "system_control", "execute_terminal"],
+    "category": "System",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": null,
+      "hitl": "optional",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "kubernetes",
+    "aliases": ["kubectl", "k8s", "kubernetes_management", "kube"],
+    "category": "Infrastructure",
+    "config": {
+      "type": "critical_transaction",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "rollback-deployment",
+      "hitl": "recommended",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "lsp",
+    "aliases": ["lsp_tool", "jump_to_definition", "find_references", "hover", "code_lens"],
+    "category": "Code Analysis",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "exa-search",
+    "aliases": ["exa", "exa_search", "semantic_search"],
+    "category": "Research",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "mysql",
+    "aliases": ["mysql_operations", "mysql-operations", "mysql_query"],
+    "category": "Database",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": true,
+      "cacheTtlMs": 60000,
+      "idempotent": true,
+      "compensation": "rollback-transaction",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "docker",
+    "aliases": ["docker_management", "docker-management", "container_management", "docker_run"],
+    "category": "Infrastructure",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "docker-rm",
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "mongodb",
+    "aliases": ["mongo", "mongodb_operations", "mongo_query"],
+    "category": "Database",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": true,
+      "cacheTtlMs": 60000,
+      "idempotent": true,
+      "compensation": "rollback-transaction",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "slack",
+    "aliases": ["slack_messaging", "slack-messaging", "slack_send", "send_slack_message"],
+    "category": "Communication",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "idempotencyKeyField": "messageId",
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "notion",
+    "aliases": ["notion_read", "notion_write", "notion-read-write"],
+    "category": "Productivity",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": "delete-notion-block",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "obsidian",
+    "aliases": ["obsidian_vault", "vault_reader", "obsidian-vault-reader"],
+    "category": "Productivity",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "subagent",
+    "aliases": ["spawn_agent", "agent_spawn", "subagent_spawn", "run_agent"],
+    "category": "Orchestration",
+    "config": {
+      "type": "long_running_process",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 3600000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "cancel-child-workflow",
+      "hitl": "none",
+      "thinkingCost": "variable"
+    }
+  },
+  {
+    "name": "sentry",
+    "aliases": ["sentry_error", "sentry-error-tracking", "error_tracking"],
+    "category": "Observability",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "stripe",
+    "aliases": ["stripe_payment", "stripe-payment-operations", "charge_card", "create_payment_intent"],
+    "category": "Finance",
+    "config": {
+      "type": "critical_transaction",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "idempotencyKeyField": "idempotencyKey",
+      "compensation": "refund-charge",
+      "hitl": "required",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "aws",
+    "aliases": ["aws_sdk", "s3", "bedrock", "ecs", "aws-sdk"],
+    "category": "Cloud",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "delete-aws-resource",
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "jira",
+    "aliases": ["jira_operations", "atlassian", "jira-atlassian-operations", "create_jira_issue"],
+    "category": "Productivity",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": "delete-jira-ticket",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "puppeteer",
+    "aliases": ["puppeteer_browser", "puppeteer-browser-automation"],
+    "category": "Web",
+    "config": {
+      "type": "stateful_session",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 1800000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "close-browser-session",
+      "hitl": "none",
+      "thinkingCost": "high",
+      "heartbeatIntervalMs": 30000
+    }
+  },
+  {
+    "name": "grafana",
+    "aliases": ["grafana_metrics", "grafana-metrics-dashboards", "metrics_query"],
+    "category": "Observability",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "task-manager",
+    "aliases": ["task_manager", "queue_task", "task_queue"],
+    "category": "Orchestration",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "dequeue-task",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "vector-search",
+    "aliases": ["qdrant", "chroma", "vector_search", "qdrant-chroma-vector-search"],
+    "category": "Memory",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 30000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "pdf-search",
+    "aliases": ["pdf_search", "rag", "document_search", "pdf-document-search"],
+    "category": "Documents",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 600000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "cloudflare",
+    "aliases": ["cloudflare_workers", "cf_kv", "r2", "cloudflare-workers-kv-r2"],
+    "category": "Cloud",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "delete-cloudflare-resource",
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "markdownify",
+    "aliases": ["markdown_convert", "file_conversion", "markdownify-file-conversion"],
+    "category": "Documents",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 10000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 600000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "vercel",
+    "aliases": ["vercel_deploy", "vercel_deployment", "vercel-deployment-management"],
+    "category": "Infrastructure",
+    "config": {
+      "type": "critical_transaction",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 600000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "rollback-vercel-deployment",
+      "hitl": "recommended",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "e2b",
+    "aliases": ["e2b_sandbox", "sandboxed_execution", "e2b-sandboxed-code-execution"],
+    "category": "Execution",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 600000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "destroy-sandbox",
+      "hitl": "none",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "terraform",
+    "aliases": ["terraform_apply", "terraform_plan", "iac", "terraform-iac-management"],
+    "category": "Infrastructure",
+    "config": {
+      "type": "critical_transaction",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 1800000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "terraform-destroy",
+      "hitl": "required",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "pagerduty",
+    "aliases": ["pager_duty", "incident_management", "pagerduty-incident-management"],
+    "category": "Observability",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": "resolve-incident",
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "linear",
+    "aliases": ["linear_pm", "project_management", "linear-project-management"],
+    "category": "Productivity",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": "delete-linear-issue",
+      "hitl": "none",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "dalle",
+    "aliases": ["dall_e", "image_generation", "generate_image", "dalle-image-generation"],
+    "category": "AI/ML",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 2, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": false,
+      "idempotent": true,
+      "idempotencyKeyField": "prompt",
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "high"
+    }
+  },
+  {
+    "name": "google-workspace",
+    "aliases": ["gmail", "google_calendar", "google_docs", "google-workspace"],
+    "category": "Productivity",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 60000,
+      "cache": true,
+      "cacheTtlMs": 300000,
+      "idempotent": true,
+      "compensation": "delete-created-resource",
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "cron",
+    "aliases": ["cron_schedule", "scheduled_execution", "cron-scheduled-execution"],
+    "category": "Orchestration",
+    "config": {
+      "type": "long_running_process",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 0,
+      "cache": false,
+      "idempotent": false,
+      "compensation": "cancel-schedule",
+      "hitl": "none",
+      "thinkingCost": "variable"
+    }
+  },
+  {
+    "name": "firecrawl",
+    "aliases": ["fire_crawl", "web_scraping", "firecrawl-web-scraping"],
+    "category": "Web",
+    "config": {
+      "type": "idempotent_read",
+      "retryPolicy": { "maximumAttempts": 5, "initialIntervalMs": 2000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": true,
+      "cacheTtlMs": 600000,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "medium"
+    }
+  },
+  {
+    "name": "composio",
+    "aliases": ["composio_saas", "saas_connectors", "composio-saas-connectors"],
+    "category": "Integration",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 3, "initialIntervalMs": 1000, "backoffCoefficient": 2, "maximumIntervalMs": 30000 },
+      "timeoutMs": 120000,
+      "cache": false,
+      "idempotent": true,
+      "compensation": null,
+      "hitl": "optional",
+      "thinkingCost": "low"
+    }
+  },
+  {
+    "name": "clawhub",
+    "aliases": ["clawhub_executor", "skill_executor", "clawhub-skill-executor"],
+    "category": "Orchestration",
+    "config": {
+      "type": "side_effect_mutation",
+      "retryPolicy": { "maximumAttempts": 1, "initialIntervalMs": 1000, "backoffCoefficient": 1, "maximumIntervalMs": 1000 },
+      "timeoutMs": 300000,
+      "cache": false,
+      "idempotent": false,
+      "compensation": null,
+      "hitl": "none",
+      "thinkingCost": "variable"
+    }
+  }
+]
