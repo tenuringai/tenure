@@ -1,0 +1,36 @@
+{
+  "name": "tenure",
+  "version": "0.1.0",
+  "description": "Semantic Execution Router for OpenClaw — durable tool execution via Temporal",
+  "main": "dist/index.js",
+  "bin": {
+    "tenure": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist/",
+    "taxonomy/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "worker": "node dist/src/temporal/worker.js",
+    "client": "node dist/src/temporal/client.js",
+    "verify": "node dist/scripts/verify-replay.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@temporalio/activity": "^1.11.8",
+    "@temporalio/client": "^1.11.8",
+    "@temporalio/common": "^1.11.8",
+    "@temporalio/worker": "^1.11.8",
+    "@temporalio/workflow": "^1.11.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}

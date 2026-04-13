@@ -102,9 +102,9 @@ Three things proven at once: crash recovery, cron durability, and no-duplicate s
 
 ---
 
-## Verify It Yourself
+## Verify
 
-Don't take our word for it. Run the certification on your own machine:
+Run the certification on your own machine:
 
 ```bash
 npx tenure certify --ci
@@ -216,6 +216,104 @@ Full proof chain: [Research Setup](./RESEARCH-SETUP.md) · [Persistence Gap](./P
 ## Contributing
 
 The highest-leverage contributions right now are crash-point mapping, deterministic replay test cases, and taxonomy refinement for the top skills. If you contribute, optimize for the wedge. Breadth comes later.
+
+---
+
+## Prerequisites
+
+- **Node.js 20+** — required for Temporal SDK native modules (`worker_threads`, `vm`, Node-API)
+- **Temporal CLI** — for the local dev server
+
+```bash
+# macOS
+brew install temporal
+
+# Or download from https://temporal.io/setup
+```
+
+Start the dev server before running the Worker:
+
+```bash
+temporal server start-dev
+# Temporal server running on localhost:7233
+# Web UI available at localhost:8233
+```
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/tenuringai/tenure
+cd tenure
+npm install
+npm run build
+```
+
+In one terminal, start the Worker:
+
+```bash
+npm run worker
+# [Worker] Tenure Worker started
+# [Worker] Task queue: tenure-task-queue
+# [Worker] Polling for tasks...
+```
+
+In a second terminal, run a tool call through the Workflow:
+
+```bash
+npm run client
+# [Client] Starting agent session Workflow
+# [Client] Sending tool call Signal
+# [Client] SHA-256: <hash>
+```
+
+Verify the no-duplicate guarantee (requires Worker running):
+
+```bash
+npm run verify
+# ✓ PASS — No-Duplicate Write
+# Activity ran: exactly once (1 ACTIVITY_TASK_COMPLETED in history)
+# SHA-256 verified
+```
+
+---
+
+## Project Structure
+
+```
+tenure/
+├── src/
+│   ├── temporal/                   # Task 1 — IMPLEMENTED
+│   │   ├── worker.ts               # Worker: polls tenure-task-queue
+│   │   ├── client.ts               # Client: starts Workflow, sends tool Signals
+│   │   ├── workflows/
+│   │   │   └── agent-session.ts    # Long-lived Workflow: one session = one Workflow
+│   │   └── activities/
+│   │       └── execute-tool.ts     # File-write Activity with hash return
+│   │
+│   ├── adapter/                    # Task 2 — before_tool_call hook (PENDING)
+│   ├── router/                     # Task 3 — SER classify(toolName, params) (PENDING)
+│   ├── budget/                     # Task 6 — budget cap + circuit breaker (PENDING)
+│   ├── scanner/                    # Task 7 — npx tenure scan ./skills (PENDING)
+│   ├── certify/                    # Tasks 5,6 — certification suite (PENDING)
+│   └── cli/                        # Task 8 — npx tenure <command> (PENDING)
+│
+├── scripts/
+│   └── verify-replay.ts            # Proves Activity caching after Worker restart
+│
+├── taxonomy/                       # SER taxonomy data (consumed by router)
+├── output/                         # Research artifacts
+│   ├── crash-recovery-matrix.json  # 21 crash points with source evidence
+│   ├── skill-durability-mapping.json
+│   └── community-evidence-validation.json
+│
+├── TAXONOMY.md                     # 50 skills, 6 execution types
+├── PERSISTENCE-GAP.md              # Why OpenClaw's persistence is insufficient
+└── DEV-PLAN.md                     # Full engineering blueprint
+```
+
+---
 
 ---
 
