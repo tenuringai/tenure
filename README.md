@@ -4,7 +4,7 @@
   <img src="./assets/tenure-hero.svg" alt="tenure" width="800" />
 </p>
 
-<h3 align="center">SKILL.md-to-Temporal compiler.</h3>
+<h3 align="center">Standardizing agentskill.io to durable workflows</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="pre-alpha" />
@@ -34,9 +34,7 @@ npx tenure certify --demo cron                                  # Prove it on yo
 
 ## How It Works
 
-```
-SKILL.md  →  parse()  →  SkillPlan  →  compile()  →  Temporal Workflow
-```
+Based on the research paper [Towards a Science of AI Agent Reliability](https://arxiv.org/abs/2602.16666)) (arXiv:2602.16666, February 2026) proposes twelve concrete metrics that decompose agent reliability along four key dimensions: consistency, robustness, predictability, and safety. 
 
 The SER router classifies each tool call. Not all tool calls are the same.
 
@@ -53,6 +51,9 @@ Resolution: `skill_name → bridge tool token → taxonomy entry → execution t
 
 50 taxonomy entries in [`taxonomy/skills.json`](./taxonomy/skills.json) · 123 OpenClaw bridge mappings in [`taxonomy/openclaw-bridge.json`](./taxonomy/openclaw-bridge.json) · Full reference: [`docs/TAXONOMY.md`](./docs/TAXONOMY.md)
 
+```
+SKILL.md  →  parse()  →  SkillPlan  →  compile()  →  Temporal Workflow
+```
 ---
 
 ## The Problem
