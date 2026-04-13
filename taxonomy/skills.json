@@ -17,7 +17,7 @@
   },
   {
     "name": "shell",
-    "aliases": ["bash", "shell-execution", "run_command", "execute_command", "bash_execution"],
+    "aliases": ["bash", "exec", "shell-execution", "run_command", "execute_command", "bash_execution"],
     "category": "System",
     "config": {
       "type": "side_effect_mutation",
@@ -32,7 +32,7 @@
   },
   {
     "name": "file-read",
-    "aliases": ["read_file", "readfile", "read-file", "cat", "file_read"],
+    "aliases": ["read", "read_file", "readfile", "read-file", "cat", "file_read"],
     "category": "Filesystem",
     "config": {
       "type": "idempotent_read",
@@ -48,7 +48,7 @@
   },
   {
     "name": "file-write",
-    "aliases": ["write_file", "writefile", "write-file", "create_file", "file_write"],
+    "aliases": ["write", "write_file", "writefile", "write-file", "create_file", "file_write"],
     "category": "Filesystem",
     "config": {
       "type": "side_effect_mutation",
@@ -64,7 +64,7 @@
   },
   {
     "name": "file-edit",
-    "aliases": ["edit_file", "editfile", "str_replace", "str_replace_editor", "patch_file"],
+    "aliases": ["edit", "edit_file", "editfile", "str_replace", "str_replace_editor", "patch_file"],
     "category": "Filesystem",
     "config": {
       "type": "side_effect_mutation",

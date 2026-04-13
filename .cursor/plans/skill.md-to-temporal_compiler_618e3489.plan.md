@@ -28,10 +28,10 @@ todos:
     status: completed
   - id: certify-reframe
     content: Reframe cron demo and no-duplicate tests to use SKILL.md pipeline instead of OpenClaw adapter.
-    status: in_progress
+    status: completed
   - id: readme-rewrite
     content: "Rewrite README.md: tenure run framing, SKILL.md-to-Temporal compiler identity, keep OpenClaw adapter visible as optional integration."
-    status: pending
+    status: completed
 isProject: false
 ---
 

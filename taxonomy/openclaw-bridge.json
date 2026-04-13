@@ -1,0 +1,532 @@
+{
+  "version": "0.2.0",
+  "description": "Maps OpenClaw / ClawHub skill folder names (and research skill_name slugs) to taxonomy tool tokens for SER classify(). Independent version cadence from taxonomy/skills.json.",
+  "skills": {
+    "wacli": {
+      "tools": [
+        "exec"
+      ]
+    },
+    "weather": {
+      "tools": [
+        "web_fetch",
+        "web_search"
+      ]
+    },
+    "1password": {
+      "tools": [
+        "exec"
+      ]
+    },
+    "bitwarden": {
+      "tools": [
+        "exec"
+      ]
+    },
+    "lastpass": {
+      "tools": [
+        "exec"
+      ]
+    },
+    "gopass": {
+      "tools": [
+        "exec"
+      ]
+    },
+    "sequential-thinking": {
+      "tools": [
+        "sequential-thinking"
+      ]
+    },
+    "shell-bash-execution": {
+      "tools": [
+        "exec"
+      ]
+    },
+    "file-read": {
+      "tools": [
+        "read"
+      ]
+    },
+    "file-write-create": {
+      "tools": [
+        "write"
+      ]
+    },
+    "file-edit": {
+      "tools": [
+        "edit"
+      ]
+    },
+    "github-api": {
+      "tools": [
+        "github-api"
+      ]
+    },
+    "web-search": {
+      "tools": [
+        "web_search"
+      ]
+    },
+    "web-fetch": {
+      "tools": [
+        "web_fetch"
+      ]
+    },
+    "grep-ripgrep": {
+      "tools": [
+        "grep"
+      ]
+    },
+    "glob-file-pattern": {
+      "tools": [
+        "glob"
+      ]
+    },
+    "git-operations": {
+      "tools": [
+        "git"
+      ]
+    },
+    "postgresql-query": {
+      "tools": [
+        "postgresql"
+      ]
+    },
+    "playwright-browser": {
+      "tools": [
+        "playwright"
+      ]
+    },
+    "sqlite-operations": {
+      "tools": [
+        "sqlite"
+      ]
+    },
+    "memory-knowledge-graph": {
+      "tools": [
+        "memory"
+      ]
+    },
+    "context7-docs": {
+      "tools": [
+        "context7"
+      ]
+    },
+    "python-repl": {
+      "tools": [
+        "python-repl"
+      ]
+    },
+    "desktop-commander": {
+      "tools": [
+        "desktop-commander"
+      ]
+    },
+    "kubernetes-management": {
+      "tools": [
+        "kubernetes"
+      ]
+    },
+    "lsp-code-analysis": {
+      "tools": [
+        "lsp"
+      ]
+    },
+    "slack-messaging": {
+      "tools": [
+        "slack"
+      ]
+    },
+    "subagent-spawning": {
+      "tools": [
+        "subagent"
+      ]
+    },
+    "stripe-payments": {
+      "tools": [
+        "stripe"
+      ]
+    },
+    "exa-semantic-search": {
+      "tools": [
+        "exa-search"
+      ]
+    },
+    "mysql-operations": {
+      "tools": [
+        "mysql"
+      ]
+    },
+    "docker-container": {
+      "tools": [
+        "docker"
+      ]
+    },
+    "mongodb-operations": {
+      "tools": [
+        "mongodb"
+      ]
+    },
+    "notion-read-write": {
+      "tools": [
+        "notion"
+      ]
+    },
+    "obsidian-vault": {
+      "tools": [
+        "obsidian"
+      ]
+    },
+    "sentry-error-tracking": {
+      "tools": [
+        "sentry"
+      ]
+    },
+    "shell": {
+      "tools": [
+        "shell"
+      ]
+    },
+    "file-write": {
+      "tools": [
+        "file-write"
+      ]
+    },
+    "grep": {
+      "tools": [
+        "grep"
+      ]
+    },
+    "glob": {
+      "tools": [
+        "glob"
+      ]
+    },
+    "git": {
+      "tools": [
+        "git"
+      ]
+    },
+    "postgresql": {
+      "tools": [
+        "postgresql"
+      ]
+    },
+    "playwright": {
+      "tools": [
+        "playwright"
+      ]
+    },
+    "sqlite": {
+      "tools": [
+        "sqlite"
+      ]
+    },
+    "memory": {
+      "tools": [
+        "memory"
+      ]
+    },
+    "context7": {
+      "tools": [
+        "context7"
+      ]
+    },
+    "kubernetes": {
+      "tools": [
+        "kubernetes"
+      ]
+    },
+    "lsp": {
+      "tools": [
+        "lsp"
+      ]
+    },
+    "exa-search": {
+      "tools": [
+        "exa-search"
+      ]
+    },
+    "mysql": {
+      "tools": [
+        "mysql"
+      ]
+    },
+    "docker": {
+      "tools": [
+        "docker"
+      ]
+    },
+    "mongodb": {
+      "tools": [
+        "mongodb"
+      ]
+    },
+    "slack": {
+      "tools": [
+        "slack"
+      ]
+    },
+    "notion": {
+      "tools": [
+        "notion"
+      ]
+    },
+    "obsidian": {
+      "tools": [
+        "obsidian"
+      ]
+    },
+    "subagent": {
+      "tools": [
+        "subagent"
+      ]
+    },
+    "sentry": {
+      "tools": [
+        "sentry"
+      ]
+    },
+    "stripe": {
+      "tools": [
+        "stripe"
+      ]
+    },
+    "aws": {
+      "tools": [
+        "aws"
+      ]
+    },
+    "jira": {
+      "tools": [
+        "jira"
+      ]
+    },
+    "puppeteer": {
+      "tools": [
+        "puppeteer"
+      ]
+    },
+    "grafana": {
+      "tools": [
+        "grafana"
+      ]
+    },
+    "task-manager": {
+      "tools": [
+        "task-manager"
+      ]
+    },
+    "vector-search": {
+      "tools": [
+        "vector-search"
+      ]
+    },
+    "pdf-search": {
+      "tools": [
+        "pdf-search"
+      ]
+    },
+    "cloudflare": {
+      "tools": [
+        "cloudflare"
+      ]
+    },
+    "markdownify": {
+      "tools": [
+        "markdownify"
+      ]
+    },
+    "vercel": {
+      "tools": [
+        "vercel"
+      ]
+    },
+    "e2b": {
+      "tools": [
+        "e2b"
+      ]
+    },
+    "terraform": {
+      "tools": [
+        "terraform"
+      ]
+    },
+    "pagerduty": {
+      "tools": [
+        "pagerduty"
+      ]
+    },
+    "linear": {
+      "tools": [
+        "linear"
+      ]
+    },
+    "dalle": {
+      "tools": [
+        "dalle"
+      ]
+    },
+    "google-workspace": {
+      "tools": [
+        "google-workspace"
+      ]
+    },
+    "cron": {
+      "tools": [
+        "cron"
+      ]
+    },
+    "firecrawl": {
+      "tools": [
+        "firecrawl"
+      ]
+    },
+    "composio": {
+      "tools": [
+        "composio"
+      ]
+    },
+    "clawhub": {
+      "tools": [
+        "clawhub"
+      ]
+    },
+    "apple-notes": {
+      "tools": ["shell"]
+    },
+    "apple-reminders": {
+      "tools": ["shell"]
+    },
+    "bear-notes": {
+      "tools": ["shell"]
+    },
+    "blogwatcher": {
+      "tools": ["shell"]
+    },
+    "blucli": {
+      "tools": ["shell"]
+    },
+    "bluebubbles": {
+      "tools": ["web-fetch"]
+    },
+    "camsnap": {
+      "tools": ["shell"]
+    },
+    "canvas": {
+      "tools": ["shell"]
+    },
+    "coding-agent": {
+      "tools": ["shell"]
+    },
+    "discord": {
+      "tools": ["web-fetch"]
+    },
+    "eightctl": {
+      "tools": ["shell"]
+    },
+    "gemini": {
+      "tools": ["shell"]
+    },
+    "gh-issues": {
+      "tools": ["github-api", "shell"]
+    },
+    "gifgrep": {
+      "tools": ["shell"]
+    },
+    "gog": {
+      "tools": ["shell"]
+    },
+    "goplaces": {
+      "tools": ["shell"]
+    },
+    "healthcheck": {
+      "tools": ["shell"]
+    },
+    "himalaya": {
+      "tools": ["shell"]
+    },
+    "imsg": {
+      "tools": ["shell"]
+    },
+    "mcporter": {
+      "tools": ["shell"]
+    },
+    "model-usage": {
+      "tools": ["shell"]
+    },
+    "nano-pdf": {
+      "tools": ["shell"]
+    },
+    "node-connect": {
+      "tools": ["shell"]
+    },
+    "openai-whisper": {
+      "tools": ["shell"]
+    },
+    "openai-whisper-api": {
+      "tools": ["shell"]
+    },
+    "openhue": {
+      "tools": ["shell"]
+    },
+    "oracle": {
+      "tools": ["shell"]
+    },
+    "ordercli": {
+      "tools": ["shell"]
+    },
+    "peekaboo": {
+      "tools": ["shell"]
+    },
+    "sag": {
+      "tools": ["shell"]
+    },
+    "session-logs": {
+      "tools": ["shell"]
+    },
+    "sherpa-onnx-tts": {
+      "tools": ["shell"]
+    },
+    "skill-creator": {
+      "tools": ["file-edit"]
+    },
+    "songsee": {
+      "tools": ["shell"]
+    },
+    "sonoscli": {
+      "tools": ["shell"]
+    },
+    "spotify-player": {
+      "tools": ["shell"]
+    },
+    "summarize": {
+      "tools": ["shell"]
+    },
+    "taskflow": {
+      "tools": ["subagent"]
+    },
+    "taskflow-inbox-triage": {
+      "tools": ["subagent"]
+    },
+    "things-mac": {
+      "tools": ["shell"]
+    },
+    "tmux": {
+      "tools": ["shell"]
+    },
+    "trello": {
+      "tools": ["shell"]
+    },
+    "video-frames": {
+      "tools": ["shell"]
+    },
+    "voice-call": {
+      "tools": ["web-fetch"]
+    },
+    "xurl": {
+      "tools": ["shell"]
+    }
+  }
+}

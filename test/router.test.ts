@@ -1,4 +1,4 @@
-import { classify, lookupTaxonomy, taxonomySize } from '../src/router';
+import { classify, lookupTaxonomy, taxonomySize, resolveBridge, bridgeVersion, bridgeSize } from '../src/router';
 import type { ExecutionType } from '../src/router';
 
 /**
@@ -225,6 +225,64 @@ assert('unknown tool idempotent is false', unknownResult.config.idempotent, fals
 const unknown2 = classify('highly-custom-enterprise-tool');
 assert('second unknown source is default', unknown2.source, 'default');
 assert('second unknown type is side_effect_mutation', unknown2.config.type, 'side_effect_mutation');
+
+// ── Bridge resolution ─────────────────────────────────────────────────────────
+console.log('[8] Bridge resolution');
+
+assert('bridge loads with 120+ skills', bridgeSize() >= 120, true);
+assert('bridge version is 0.2.0', bridgeVersion(), '0.2.0');
+
+assert('resolveBridge("wacli") returns ["exec"]', JSON.stringify(resolveBridge('wacli')), JSON.stringify(['exec']));
+assert('resolveBridge("weather") returns ["web_fetch","web_search"]', JSON.stringify(resolveBridge('weather')), JSON.stringify(['web_fetch', 'web_search']));
+assert('resolveBridge("1password") returns ["exec"]', JSON.stringify(resolveBridge('1password')), JSON.stringify(['exec']));
+assert('resolveBridge("unknown-xyz") returns null', resolveBridge('unknown-xyz-999'), null);
+
+// Bridge-resolved classify: wacli → exec → shell taxonomy entry (side_effect_mutation)
+const wacliResult = classify('wacli');
+assert('classify("wacli") source is bridge', wacliResult.source, 'bridge');
+assert('classify("wacli") type is side_effect_mutation', wacliResult.config.type, 'side_effect_mutation');
+assert('classify("wacli") reason mentions bridge', wacliResult.reason.includes('bridge v'), true);
+
+// Bridge-resolved classify: weather → web_fetch + web_search (both idempotent_read)
+const weatherResult = classify('weather');
+assert('classify("weather") source is bridge', weatherResult.source, 'bridge');
+assert('classify("weather") type is idempotent_read', weatherResult.config.type, 'idempotent_read');
+
+// Bridge-resolved classify: 1password → exec → side_effect_mutation
+const onePassResult = classify('1password');
+assert('classify("1password") source is bridge', onePassResult.source, 'bridge');
+assert('classify("1password") type is side_effect_mutation', onePassResult.config.type, 'side_effect_mutation');
+
+// v0.2 bridge entries: CLI wrappers → shell (side_effect_mutation)
+assertType('apple-notes', 'side_effect_mutation');
+assertSource('apple-notes', 'bridge');
+assertType('tmux', 'side_effect_mutation');
+assertSource('tmux', 'bridge');
+assertType('xurl', 'side_effect_mutation');
+assertSource('xurl', 'bridge');
+
+// v0.2 bridge entries: API callers → web-fetch (idempotent_read)
+assertType('bluebubbles', 'idempotent_read');
+assertSource('bluebubbles', 'bridge');
+assertType('discord', 'idempotent_read');
+assertSource('discord', 'bridge');
+
+// v0.2 bridge: gh-issues → github-api + shell → side_effect_mutation (highest risk)
+assertType('gh-issues', 'side_effect_mutation');
+assertSource('gh-issues', 'bridge');
+
+// v0.2 bridge: orchestration → subagent (long_running_process)
+assertType('taskflow', 'long_running_process');
+assertSource('taskflow', 'bridge');
+
+// v0.2 bridge: skill-creator → file-edit (side_effect_mutation)
+assertType('skill-creator', 'side_effect_mutation');
+assertSource('skill-creator', 'bridge');
+
+// Tool already in taxonomy should still resolve via taxonomy, not bridge
+assertSource('shell', 'taxonomy');
+assertSource('web-search', 'taxonomy');
+assertSource('stripe', 'taxonomy');
 
 // ── Results ───────────────────────────────────────────────────────────────────
 

@@ -22,6 +22,9 @@ switch (command) {
   case 'run':
     handleRun(args);
     break;
+  case 'score':
+    handleScore(args);
+    break;
   case 'scan':
     handleScan(args);
     break;
@@ -105,6 +108,38 @@ function handleRun(args: string[]): void {
       console.error(`\n[tenure] SKILL.md is missing required frontmatter fields.`);
       console.error(`         Required: name, description`);
     }
+    process.exit(1);
+  });
+}
+
+// ─── score command ───────────────────────────────────────────────────────────
+
+function handleScore(args: string[]): void {
+  const target = args.find(a => !a.startsWith('--'));
+
+  if (!target) {
+    console.error(`[tenure] score requires a path to a SKILL.md file or directory`);
+    console.error(`         Usage: tenure score ./skill/SKILL.md`);
+    console.error(`                tenure score ./skills  (batch mode)`);
+    process.exit(1);
+    return;
+  }
+
+  import('fs/promises').then(async (fsp) => {
+    const stat = await fsp.stat(target).catch(() => null);
+    const isFile = stat?.isFile() && target.endsWith('SKILL.md');
+
+    if (isFile) {
+      const { score } = await import('../scorer/index');
+      const result = await score(target);
+      process.exit(result.totalScore >= 50 ? 0 : 1);
+    } else {
+      const { scoreBatch } = await import('../scorer/index');
+      const summary = await scoreBatch(target);
+      process.exit(summary.averageScore >= 50 ? 0 : 1);
+    }
+  }).catch((err: Error) => {
+    console.error(`[tenure] score failed: ${err.message}`);
     process.exit(1);
   });
 }
@@ -197,16 +232,18 @@ function printHelp(): void {
   Usage:
     tenure run ./skill/SKILL.md                  Parse + classify + compile → Workflow
     tenure run --cron "*/5 * * * *" ./skill/...  Compile to a cron Schedule
-    tenure scan ./skills                          Classify all skills in a directory
+    tenure score ./skill/SKILL.md                Score a skill's durability (0-100)
+    tenure score ./skills                        Score all skills in a directory
+    tenure scan ./skills                         Classify all skills in a directory
     tenure certify --demo cron                   Run cron durability proof
     tenure certify --ci                          Run full certification suite
     tenure create                                LLM ingest (deferred to post-launch)
 
   Examples:
+    tenure score ./my-skill/SKILL.md
+    tenure score /path/to/openclaw/skills
     tenure run ./test/fixtures/cron-log-skill/SKILL.md
-    tenure run --cron "*/60 * * * * *" ./test/fixtures/cron-log-skill/SKILL.md
     tenure scan ./skills
-    tenure certify --demo cron
 
   Options:
     --help                                       Show this help

@@ -4,10 +4,10 @@
   <img src="./assets/tenure-hero.svg" alt="tenure" width="800" />
 </p>
 
-<h3 align="center">Durable execution for OpenClaw.</h3>
+<h3 align="center">SKILL.md-to-Temporal compiler.</h3>
 
 <p align="center">
-  Your crons survive crashes. Your writes don't duplicate. Your budget doesn't runaway.
+  Point it at any agentskills.io-compatible SKILL.md. Get a durable, classified, crash-proof Workflow.
 </p>
 
 <p align="center">
@@ -18,72 +18,55 @@
 
 ---
 
-## The Problem You Already Know
+## The Verb
 
-You configured a cron. The agent ran three times. The process died. When it came back, the missed runs were gone. Nobody told you. The log has a gap where Tuesday afternoon used to be.
+I built a compiler that turns SKILL.md files into crash-proof Temporal workflows
 
-Or worse — it retried, and now there are two Slack messages, two git commits, two Stripe charges.
+Tenure is the execution environment for durable skills. It gives every skill a structured contract made of execution type, retry policy, compensation chain, budget cap, and certification proof — so skills can run continuously, survive crashes, and stay inspectable across every invocation instead of resetting to hope-and-retry.
 
-OpenClaw is excellent at reasoning. It picks the right tool, assembles the right prompt, manages the conversation. But when the process dies mid-execution, the state that was in memory is gone. The recovery path doesn't know what already happened. And every tool call — whether it's a harmless web search or an irreversible payment — gets the same retry policy: none, or hope.
+an agentskills.io-to-Temporal compiler where tool calls become Activities and reasoning gaps become thinking Activities, all on one durable timeline.
 
-A web search and a Stripe charge should not have the same retry policy.
+Tenure reads a SKILL.md. It classifies each step by execution type. Tool calls become Temporal Activities. Reasoning gaps become thinking Activities. The whole thing runs on a durable timeline that survives crashes, catches up missed schedules, and never duplicates a side effect. The skill author controls the execution contract through the execution: block. If they don't declare one, the taxonomy provides safe defaults.
 
-That's what Tenure fixes.
+Take the skill your cron job runs. Tenure it. It now survives crashes, catches up missed triggers, and never duplicates a side effect.
 
----
+```bash
+npx tenure run ./your-skill/SKILL.md
+```
 
-## Not Just Us
+A SKILL.md goes in. A running [Temporal](https://temporal.io) Workflow comes out — with every tool call classified by execution type, every mutation protected by an idempotency key, and every cron trigger outlasting process death.
 
-This isn't a theoretical problem. It's reported, measured, and unresolved:
-
-- **[OpenClaw #10164](https://github.com/openclaw/openclaw/issues/10164)** — "Native Temporal integration for durable workflows and scheduling." 13 upvotes. Open since February 2026. No maintainer response.
-- **[OpenClaw #62442](https://github.com/openclaw/openclaw/issues/62442)** — Gateway restart drops all session state. In-memory, not persisted.
-- **[OpenClaw #55343](https://github.com/openclaw/openclaw/issues/55343)** — History saves to disk but doesn't reload. Data exists. Recovery doesn't.
-- **[Vercel AI SDK #7261](https://github.com/vercel/ai/issues/7261)** — 3–5% duplicate tool call rate. Different tool call IDs each time.
-- **[LangGraph RFC #6617](https://github.com/langchain-ai/langgraph)** — Five production reliability primitives proposed. None shipped.
-- **[Pydantic AI #83](https://github.com/pydantic/pydantic-ai/issues/83)** — Read/write tool distinction proposed by Samuel Colvin. Closed as a docs question.
-
-Six papers from March–April 2026 found [190 security advisories](https://arxiv.org/abs/2603.27517) across OpenClaw's architecture and [26% of community skills containing vulnerabilities](https://arxiv.org/abs/2603.11619). The execution boundary is the most underprotected layer.
-
----
-
-## What It Does
-
-Tenure sits between OpenClaw and execution. Every tool call passes through a router that classifies it, chooses the right [Temporal](https://temporal.io) primitive, and lands it on a durable timeline.
-
-That means:
-
-**Crashes don't lose work.** Temporal Event History records every completed execution. When a Worker restarts, it replays from history — not from OpenClaw's in-memory state.
-
-**Retries don't duplicate side effects.** A file write that already completed doesn't run again on replay. An idempotency key prevents the second Stripe charge. A dedup guard catches the duplicate Slack message.
-
-**Crons don't die with the process.** Temporal Schedules replace in-process `setTimeout`. If the Worker is down for an hour, missed runs catch up when it returns. No gaps. No silent failures.
-
-**Budgets don't runaway.** Token spend is tracked at the execution boundary. When the cap is hit, the workflow stops — before the next call, not after.
+No other tool in the ecosystem does this. SkillsMP indexes skills. ClawHub hosts skills. skill-creator authors skills. **Tenure runs skills** — durably, with classified execution semantics, on a real Temporal timeline.
 
 ---
 
 ## Quick Start
 
 ```bash
-npx tenure connect openclaw
+# One-shot execution
+npx tenure run ./your-skill/SKILL.md
+
+# Cron schedule — fires on Temporal, survives Worker crashes
+npx tenure run --cron "*/60 * * * * *" ./your-skill/SKILL.md
+
+# Classify all skills in a directory
+npx tenure scan ./skills
+
+# Prove the guarantees on your machine
+npx tenure certify --demo cron
 ```
 
-That's it. Tenure wraps your existing OpenClaw agent. No changes to your agent code, your skills, or your prompts. OpenClaw keeps thinking. Tenure starts executing.
-
-**Don't have OpenClaw yet?** Prove the Temporal layer works first:
+**Don't have a SKILL.md yet?** Run the standalone proof first:
 
 ```bash
 npx tenure demo --standalone
 ```
 
-Runs the full cron-durability proof without any agent dependency — Temporal Schedule fires every 10s, Worker is killed mid-run, restarts, catches up. Takes ~90 seconds. Prints pass/fail with line count, gaps, and duplicates.
+Proves crash recovery, cron durability, and no-duplicate side effects in ~90 seconds without any agent dependency.
 
 ---
 
 ## See It Survive
-
-Run it yourself in ~90 seconds — no OpenClaw required:
 
 ```bash
 npx tenure demo --standalone
@@ -126,43 +109,33 @@ npx tenure demo --standalone
 [tenure]  Dupes:      0
 [tenure]  Sequential: YES
 [tenure] ══════════════════════════════════════════
-
-[tenure] Log contents:
-         1|2026-04-13T07:14:00.046Z
-         2|2026-04-13T07:14:10.036Z
-         3|2026-04-13T07:14:20.029Z
-         4|2026-04-13T07:14:46.056Z   ← resumed 26s after crash (catch-up)
-         5|2026-04-13T07:14:50.039Z
-         6|2026-04-13T07:15:00.032Z
-         7|2026-04-13T07:15:10.022Z
-         8|2026-04-13T07:15:20.026Z
 ```
 
-Three things proven at once: crash recovery, cron durability, and no-duplicate side effects. Seq 4 fires 26 seconds after crash recovery — Temporal's `catchupWindow` policy delivered the missed trigger the instant the Worker came back.
+Three things proven at once: crash recovery, cron durability, and no-duplicate side effects.
 
 ---
 
-## Verify
+## The Pipeline
 
-Run the certification on your own machine:
+Three stages. One verb.
 
-```bash
-npx tenure certify --ci
+```
+SKILL.md  →  parse()  →  SkillPlan  →  compile()  →  Temporal Workflow
 ```
 
-The certifier runs the proof ladder — read replay, write replay, cron durability, budget cap, circuit breaker — and reports pass/fail with sequence verification and file hash. If it passes, the guarantee holds on your infrastructure, not just ours.
+**Stage 1 — Ingest:** Read the SKILL.md file. Extract frontmatter (name, description, allowed-tools, execution contract). Hash the content for pinning.
 
-```bash
-npx tenure scan ./skills
-```
+**Stage 2 — Classify:** Walk the markdown body. Each numbered step is classified:
+- Steps that reference a tool from `allowed-tools` or match the taxonomy → `tool_call` step, classified by the SER router into one of 6 execution types
+- Everything else → `thinking` step, routed to an LLM Activity with model tier and token budget
 
-Scan classifies every skill in your workspace against the execution taxonomy. You'll see which calls are cached reads, which need idempotency keys, and which require human approval before they fire.
+**Stage 3 — Compile:** Generate a sequential Temporal Workflow from the classified SkillPlan. Each step becomes an Activity with the correct retry policy, timeout, and idempotency configuration from its execution type.
 
 ---
 
-## How Tenure Routes
+## How Tenure Classifies
 
-Not all tool calls are the same. Tenure classifies each one and picks the Temporal primitive that fits.
+Not all tool calls are the same. The SER router classifies each one and the Temporal compiler picks the right primitive.
 
 | Type | What It Covers | What Tenure Does |
 |------|---------------|-----------------|
@@ -173,49 +146,42 @@ Not all tool calls are the same. Tenure classifies each one and picks the Tempor
 | **Long-Running Process** | Subagent spawn, video render | Child workflow with its own budget |
 | **Human-Interactive** | Approval request, clarification prompt | Signal/wait with zero compute while blocked |
 
-The router doesn't guess. It uses a taxonomy of 30 classified skills with conditional routing — a `git status` is a cached read, but a `git push --force main` is a critical transaction that requires approval. A PostgreSQL `SELECT` is a read, but a `DROP TABLE` is a saga with a human gate.
+The router uses a taxonomy of 30 classified skills with conditional routing. The skill author can override any field through the `execution:` block in SKILL.md frontmatter.
 
 Full taxonomy: [`TAXONOMY.md`](./TAXONOMY.md)
 
 ---
 
-## The Boundary
+## The Engine
 
-OpenClaw is the brain. Tenure is the nervous system.
+The parser is the front door. It reads the skill. The router classifies. The compiler emits the Workflow. Random skill in, durable execution out.
 
-OpenClaw owns reasoning — LLM inference, prompt assembly, tool selection, agent UX. None of that changes. Tenure owns what happens after the tool call is emitted — execution, retries, compensation, budget enforcement, crash recovery.
-
-The line is clean: **OpenClaw decides what to do. Tenure makes sure it happens exactly once, survives failure, and stays within budget.**
-
-Every call goes through the router. The router chooses the Temporal primitive. The execution lands on the timeline. That makes every action countable, typed, replayable, and revocable. If a call bypasses the router, it becomes invisible — uncounted, unrecoverable, untamed.
+Every platform produces SKILL.md files: OpenClaw, Claude Code, Cursor, skill-creator, HolaOS. Tenure is platform-agnostic — it operates on the portable skill unit, not on any agent's internals. One adapter per platform, one engine for all of them.
 
 ---
 
-## Why This Exists
+## The Problem
 
-OpenClaw [Issue #10164](https://github.com/openclaw/openclaw/issues/10164) asked for Temporal-backed durable execution in February. Thirteen people upvoted it. No maintainer responded.
+You configured a cron. The agent ran three times. The process died. When it came back, the missed runs were gone. Nobody told you. The log has a gap where Tuesday afternoon used to be.
 
-The pain behind that issue is simple: cron jobs crash and nobody knows, retries duplicate side effects, and there's no way to set a budget cap that actually stops execution before the money is gone.
+Or worse — it retried, and now there are two Slack messages, two git commits, two Stripe charges.
 
-Tenure exists because that issue deserved an answer. Not a PR that waits for upstream review — an external execution layer that works today, wraps your existing agents, and proves the guarantee on your machine.
+Agent frameworks are excellent at reasoning. They pick the right tool, assemble the right prompt, manage the conversation. But when the process dies mid-execution, the state that was in memory is gone. The recovery path doesn't know what already happened. And every tool call — whether it's a harmless web search or an irreversible payment — gets the same retry policy: none, or hope.
 
-<!-- TODO: Add founder video -->
-<!-- ### Hear the story
-<p align="center">
-  <a href="https://youtube.com/watch?v=XXXXXX">
-    <img src="./assets/founder-video-thumb.png" alt="Why I built Tenure" width="500" />
-  </a>
-</p> -->
+A web search and a Stripe charge should not have the same retry policy.
 
 ---
 
-## Roadmap
+## Not Just Us
 
-**Phase 1** (now): OpenClaw adapter, SER router, taxonomy-backed routing, crash-recovery and no-duplicate certification.
+This isn't theoretical. It's reported, measured, and unresolved:
 
-**Phase 2**: Community standard for `execution:` blocks in SKILL.md frontmatter. Skill authors declare their execution contract; the taxonomy provides defaults for everything else.
-
-**Phase 3+**: Broader platform surfaces — only after the OSS wedge is proven and the community trusts the guarantee.
+- **[OpenClaw #10164](https://github.com/openclaw/openclaw/issues/10164)** — "Native Temporal integration for durable workflows and scheduling." 13 upvotes. Open since February 2026. No maintainer response.
+- **[OpenClaw #62442](https://github.com/openclaw/openclaw/issues/62442)** — Gateway restart drops all session state. In-memory, not persisted.
+- **[OpenClaw #55343](https://github.com/openclaw/openclaw/issues/55343)** — History saves to disk but doesn't reload. Data exists. Recovery doesn't.
+- **[Vercel AI SDK #7261](https://github.com/vercel/ai/issues/7261)** — 3–5% duplicate tool call rate. Different tool call IDs each time.
+- **[LangGraph RFC #6617](https://github.com/langchain-ai/langgraph)** — Five production reliability primitives proposed. None shipped.
+- **[Pydantic AI #83](https://github.com/pydantic/pydantic-ai/issues/83)** — Read/write tool distinction proposed by Samuel Colvin. Closed as a docs question.
 
 ---
 
@@ -233,36 +199,53 @@ They don't — or they proposed it and didn't ship it.
 | **Pydantic AI** | None | Proposed in #83, closed | None | None |
 | **Tenure** | Temporal Event History | 6 types, 30 skills | Structural (replay) | Workflow-level enforcement |
 
-This isn't a criticism of these frameworks — they're reasoning engines, not execution engines. Tenure doesn't replace them. It sits underneath, the same way Tenure sits underneath OpenClaw.
+This isn't a criticism of these frameworks — they're reasoning engines, not execution engines. Tenure doesn't replace them. It compiles their skills into durable execution.
 
 ---
 
-## Research
+## OpenClaw Integration
 
-The architecture is grounded in source-level analysis of the OpenClaw codebase, six academic papers on agent security and reliability, and community evidence from GitHub issues, Reddit, and framework RFCs.
+Tenure also includes an OpenClaw adapter for transparent integration — the original adapter lives at `src/adapter/openclaw/` and is one optional integration among many.
 
-| Source | What It Proved |
-|--------|---------------|
-| OpenClaw source (`src/cron/`, `src/gateway/`, `src/agents/`) | In-process `setTimeout` cron, best-effort tool result flush, in-memory dedupe Map |
-| [TAMU-190](https://arxiv.org/abs/2603.27517) | 190 security advisories across 10 architectural layers |
-| [TAMING-26](https://arxiv.org/abs/2603.11619) | 26% of community skills contain vulnerabilities |
-| [Vercel AI SDK #7261](https://github.com/vercel/ai/issues/7261) | 3–5% duplicate tool call rate in production |
-| 21-entry crash matrix | Every crash point mapped with source files, persistence gaps, and test cases |
+```bash
+# Connect Tenure to an OpenClaw session (transparent wrap)
+npx tenure connect openclaw
+```
 
-Full proof chain: [Research Setup](./RESEARCH-SETUP.md) · [Persistence Gap](./PERSISTENCE-GAP.md) · [Session 1 Findings](./SESSION-1-FINDINGS.md) · [Crash Matrix](./output/crash-recovery-matrix.json) · [Cron Durability Proof](./SESSION-3-CRON-DURABILITY.md)
+The adapter wraps every tool's `execute` function to route through Temporal. OpenClaw sees no difference. Every tool call appears on the Temporal timeline as a classified Activity.
+
+The adapter is not Tenure's identity — it's one platform integration. The identity is `tenure run`.
 
 ---
 
-## Contributing
+## Certify
 
-The highest-leverage contributions right now are crash-point mapping, deterministic replay test cases, and taxonomy refinement for the top skills. If you contribute, optimize for the wedge. Breadth comes later.
+Run the certification on your own machine:
+
+```bash
+npx tenure certify --demo cron
+```
+
+The cron proof: starts a SKILL.md on a Temporal Schedule, kills the Worker, waits for missed cycles, restarts, verifies catch-up. 0 gaps, 0 dupes.
+
+```bash
+npx tenure certify --ci
+```
+
+Runs the full certification suite: cron durability + crash recovery + no-duplicate. Reports pass/fail with sequence verification.
+
+```bash
+npx tenure scan ./skills
+```
+
+Classifies every SKILL.md in your workspace. Shows which calls are cached reads, which need idempotency keys, which require human approval.
 
 ---
 
 ## Prerequisites
 
-- **Node.js 20+** — required for Temporal SDK native modules (`worker_threads`, `vm`, Node-API)
-- **Temporal CLI** — for the local dev server
+- **Node.js 20+**
+- **Temporal CLI**
 
 ```bash
 # macOS
@@ -270,8 +253,6 @@ brew install temporal
 
 # Or download from https://temporal.io/setup
 ```
-
-Start the dev server before running the Worker:
 
 ```bash
 temporal server start-dev
@@ -295,88 +276,64 @@ In one terminal, start the Worker:
 ```bash
 npm run worker
 # [Worker] Tenure Worker started
-# [Worker] Task queue: tenure-task-queue
-# [Worker] Polling for tasks...
+# [Worker] Workflows: agentSessionWorkflow, skillExecutionWorkflow
+# [Worker] Activities: dispatchToolActivity, executeSkillStep, executeThinkingStep
+# [Worker] Polling for tasks... (Ctrl+C to stop)
 ```
 
-In a second terminal, run a tool call through the Workflow:
+In a second terminal, run a skill:
 
 ```bash
-npm run client
-# [Client] Starting agent session Workflow
-# [Client] Sending tool call Signal
-# [Client] SHA-256: <hash>
+npm run build && node dist/src/cli/index.js run ./test/fixtures/sample-skills/cron-log-skill/SKILL.md
+# [tenure] Parsing: .../cron-log-skill/SKILL.md
+# [tenure] Skill: cron-log-writer
+# [tenure] Version: a3f7b2e1c4d5...
+# [tenure] Steps: 4 (4 tool_call, 0 thinking)
+# [tenure] ✓ Workflow started
+#           ID: tenure-skill-cron-log-writer-a3f7b2e1c4d5
 ```
 
-Verify the no-duplicate guarantee (requires Worker running):
-
-```bash
-npm run verify
-# ✓ PASS — No-Duplicate Write
-# Activity ran: exactly once (1 ACTIVITY_TASK_COMPLETED in history)
-# SHA-256 verified
-```
-
-Run the standalone cron-durability proof (no OpenClaw required):
+Or run the standalone proof:
 
 ```bash
 npm run demo
 # [tenure]  ✓ CRON DURABILITY PROOF — PASSED
-# [tenure]  Lines:      8 (min 5)
-# [tenure]  Gaps:       0
-# [tenure]  Dupes:      0
-# [tenure]  Sequential: YES
+```
+
+Run tests:
+
+```bash
+npm test
+# ✓ test/parser.test.ts (20 tests)
+# ✓ test/compiler.test.ts (14 tests)
 ```
 
 ---
 
-## Project Structure
+## Research
 
-```
-tenure/
-├── src/
-│   ├── temporal/                   # Tasks 1, 2.5 — IMPLEMENTED
-│   │   ├── worker.ts               # Worker: polls tenure-task-queue
-│   │   ├── client.ts               # Client: starts Workflow, sends tool Updates
-│   │   ├── workflows/
-│   │   │   ├── agent-session.ts    # Long-lived Workflow: one session = one Workflow
-│   │   │   └── append-line.ts      # Schedule-triggered Workflow for standalone proof
-│   │   └── activities/
-│   │       ├── execute-tool.ts     # Generic dispatch Activity (tool registry lookup)
-│   │       └── append-line.ts      # File-append Activity for cron-durability proof
-│   │
-│   ├── adapter/                    # Task 2 — IMPLEMENTED
-│   │   ├── index.ts                # tenureConnect() — wraps tools, starts Workflow
-│   │   ├── wrap-tool.ts            # Replaces tool.execute with Temporal Update dispatch
-│   │   ├── session.ts              # Maps OpenClaw session IDs → Temporal Workflow IDs
-│   │   ├── tool-registry.ts        # Process-global map of original execute functions
-│   │   └── types.ts                # JSON-serializable types for the Temporal boundary
-│   │
-│   ├── cli/                        # Tasks 2.5, 8 — IMPLEMENTED (demo), PENDING (rest)
-│   │   ├── index.ts                # CLI router: connect | certify | scan | demo
-│   │   └── demo.ts                 # npx tenure demo --standalone (Proof Surface 1)
-│   │
-│   ├── router/                     # Task 3 — SER classify(toolName, params) (PENDING)
-│   ├── budget/                     # Task 6 — budget cap + circuit breaker (PENDING)
-│   ├── scanner/                    # Task 7 — npx tenure scan ./skills (PENDING)
-│   └── certify/                    # Tasks 5, 6 — certification suite (PENDING)
-│
-├── scripts/
-│   ├── verify-replay.ts            # Proves Activity caching after Worker restart
-│   └── e2e-adapter.ts              # End-to-end adapter test (Task 2 proof)
-│
-├── taxonomy/                       # SER taxonomy data (consumed by router)
-├── output/                         # Research artifacts
-│   ├── crash-recovery-matrix.json  # 21 crash points with source evidence
-│   ├── skill-durability-mapping.json
-│   └── community-evidence-validation.json
-│
-├── TAXONOMY.md                     # 50 skills, 6 execution types
-├── PERSISTENCE-GAP.md              # Why OpenClaw's persistence is insufficient
-└── DEV-PLAN.md                     # Full engineering blueprint
-```
+The architecture is grounded in source-level analysis of agent frameworks, six academic papers on agent security and reliability, and community evidence from GitHub issues, Reddit, and framework RFCs.
+
+| Source | What It Proved |
+|--------|---------------|
+| OpenClaw source (`src/cron/`, `src/gateway/`, `src/agents/`) | In-process `setTimeout` cron, best-effort tool result flush, in-memory dedupe Map |
+| [TAMU-190](https://arxiv.org/abs/2603.27517) | 190 security advisories across 10 architectural layers |
+| [TAMING-26](https://arxiv.org/abs/2603.11619) | 26% of community skills contain vulnerabilities |
+| [Vercel AI SDK #7261](https://github.com/vercel/ai/issues/7261) | 3–5% duplicate tool call rate in production |
+| 21-entry crash matrix | Every crash point mapped with source files, persistence gaps, and test cases |
+
+Full proof chain: [Research Setup](./RESEARCH-SETUP.md) · [Persistence Gap](./PERSISTENCE-GAP.md) · [Crash Matrix](./output/crash-recovery-matrix.json) · [Cron Durability Proof](./SESSION-3-CRON-DURABILITY.md)
 
 ---
+
+## Roadmap
+
+
+---
+
+## Contributing
+
+The highest-leverage contributions right now are skill classification, taxonomy refinement, and platform adapter implementations. If you contribute, optimize for the wedge. Breadth comes later.
 
 ---
 
@@ -387,5 +344,5 @@ MIT
 ---
 
 <p align="center">
-  <strong>OpenClaw thinks. Tenure executes. <a href="https://temporal.io">Temporal</a> owns the timeline.</strong>
+  <strong>Random skill in. Durable execution out. <a href="https://temporal.io">Temporal</a> owns the timeline.</strong>
 </p>

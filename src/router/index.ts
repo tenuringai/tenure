@@ -14,6 +14,7 @@
  */
 export { classify } from './classify';
 export { lookupTaxonomy, normalizeName, taxonomySize } from './taxonomy';
+export { resolveBridge, bridgeVersion, bridgeSize, resetBridge } from './bridge';
 export type {
   ExecutionType,
   ExecutionConfig,

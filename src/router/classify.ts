@@ -1,4 +1,5 @@
 import { lookupTaxonomy, normalizeName } from './taxonomy';
+import { resolveBridge, bridgeVersion, typeRisk } from './bridge';
 import type { ExecutionConfig, ClassifyResult } from './types';
 
 /**
@@ -273,7 +274,28 @@ export function classify(
     };
   }
 
-  // 3. Safe default for unknown tools.
+  // 3. Bridge resolution — resolve ecosystem/marketing names to taxonomy tool tokens.
+  const bridgeTools = resolveBridge(toolName);
+  if (bridgeTools && bridgeTools.length > 0) {
+    const resolved = bridgeTools
+      .map(t => ({ tool: t, entry: lookupTaxonomy(t) }))
+      .filter((r): r is { tool: string; entry: NonNullable<ReturnType<typeof lookupTaxonomy>> } => r.entry !== null);
+
+    if (resolved.length > 0) {
+      const picked = resolved.reduce((most, curr) =>
+        typeRisk(curr.entry.config.type) > typeRisk(most.entry.config.type) ? curr : most
+      );
+      const toolList = bridgeTools.join(' + ');
+      return {
+        toolName,
+        config: picked.entry.config,
+        source: 'bridge',
+        reason: `resolved ${toolName} → ${toolList} via bridge v${bridgeVersion()} (matched taxonomy: ${picked.entry.name})`,
+      };
+    }
+  }
+
+  // 4. Safe default for unknown tools.
   return {
     toolName,
     config: { ...SAFE_DEFAULT },

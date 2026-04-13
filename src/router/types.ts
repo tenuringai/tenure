@@ -68,7 +68,7 @@ export interface ClassifyResult {
   toolName: string;
   config: ExecutionConfig;
   /** How the classification was determined. */
-  source: 'conditional' | 'taxonomy' | 'default';
+  source: 'conditional' | 'taxonomy' | 'bridge' | 'default';
   /** Human-readable reason string for debugging/observability. */
   reason: string;
 }
