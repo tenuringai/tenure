@@ -15,6 +15,8 @@ The active wedge is:
 - prove execution lands on the Temporal timeline
 - prove replay does not duplicate side effects
 - prove cron survives Worker death
+- prove budget caps stop runaway spend
+- prove circuit breakers stop pathological loops
 
 Everything else is secondary until that works.
 
@@ -38,10 +40,12 @@ Read these in order before doing new work:
 1. `README.md`
 2. `RESEARCH-SETUP.md`
 3. `tenure-deep-research-brief.md`
-4. `TAXONOMY.md`
-5. `tenure-extend.md`
-6. `INSIGHTS.MD`
-7. `RESEARCH-CORPUS.MD`
+4. `PERSISTENCE-GAP.md`
+5. `TAXONOMY.md`
+6. `tenure-extend.md`
+7. `INSIGHTS.MD`
+8. `RESEARCH-CORPUS.MD`
+9. `CONTRADICTIONS.md`
 
 Use `research-direction-context/` only as historical reference, not as the current source of truth.
 
@@ -110,6 +114,7 @@ Adapter boundary and replay proof:
 - document what OpenClaw persists
 - document why that state is insufficient
 - identify what Tenure must checkpoint
+- produce `PERSISTENCE-GAP.md`
 
 ### Session 2
 
@@ -127,6 +132,8 @@ Cron durability proof:
 - replace fragile in-process cron conceptually with Temporal Schedule
 - define the canonical demo
 - define the certification shape
+- define budget-cap enforcement proof
+- define circuit-breaker proof
 
 ### Session 4
 
@@ -192,6 +199,7 @@ The current wedge is especially anchored on:
 - the read -> write -> cron proof ladder
 
 If new research contradicts these assumptions, record the contradiction explicitly rather than silently drifting the doctrine.
+Record it in `CONTRADICTIONS.md` using the root template.
 
 ## Output Discipline
 
@@ -224,6 +232,8 @@ If the answer is no, it is probably not first-order work for the current phase.
 - crash recovery matrix entries
 - deterministic write replay proof logic
 - cron durability certification design
+- budget-cap enforcement proof logic
+- circuit-breaker proof logic
 - taxonomy rules that follow from proven execution behavior
 - public-proof material that can later support README and Issue `#10164`
 

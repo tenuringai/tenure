@@ -99,6 +99,22 @@ Goal:
 
 This maps directly to the founder pain: "tired of cron jobs crashes and fear of max token burn."
 
+#### Proof 3: Budget Cap Enforcement
+
+Goal:
+
+- prove the workflow can stop itself before runaway spend
+- show that thinking-time enforcement is applied at the execution boundary before dispatching the next call
+- turn "survived the crash" into "cannot burn the budget"
+
+#### Proof 4: Circuit Breaker Trip
+
+Goal:
+
+- prove repeated identical or pathological execution patterns can be interrupted automatically
+- show that the workflow can pause or escalate instead of looping indefinitely
+- turn "the engine works" into "the agent can be tamed"
+
 ---
 
 ## 4. Canonical Public Proof
@@ -379,13 +395,14 @@ Questions to answer:
    You should leave Session 1 with:
    - one written read-proof hypothesis
    - one written deterministic write-proof hypothesis
+   - `PERSISTENCE-GAP.md` with the current summary of what OpenClaw saves and why it is insufficient
    - a list of inspected crash points with persistence-gap notes
    - a short blocker list, if any
    - a clear statement of where the authoritative checkpoint must live in Temporal history
 
 10. Use this done definition.
    Session 1 is complete when you can say:
-   "I know which OpenClaw state is insufficient, which execution boundary Tenure must own, and what minimal checkpoint is required for read replay and no-duplicate file write replay."
+   "I know which OpenClaw state is insufficient, which execution boundary Tenure must own, what minimal checkpoint is required for read replay and no-duplicate file write replay, and I have recorded the persistence gap in `PERSISTENCE-GAP.md`."
 
 ### Session 2: Crash Recovery Matrix
 
@@ -461,6 +478,7 @@ Goal:
 
 - model the cron-triggered proof with Temporal Schedule
 - define the certification test shape and public demo steps
+- extend the proof into taming via budget cap enforcement and circuit breaker trip
 
 #### Session 3 Checklist
 
@@ -506,31 +524,52 @@ Goal:
    - assertions
    - pass/fail conditions
 
-7. Make the public proof legible.
+7. Add the taming proof to the same session.
+   Define:
+   - one budget-cap proof where the workflow stops before overspend
+   - one circuit-breaker proof where repeated identical execution patterns cause a pause or escalation
+   Keep both tied to the same execution boundary that owns cron durability.
+
+8. State exactly where each taming check lives.
+   The research output should make clear:
+   - budget cap enforcement is evaluated in workflow-owned logic before dispatching the next execution step
+   - circuit breaker state is counted at the execution boundary and triggers workflow pause/escalation when the threshold is reached
+
+9. Decide what must be asserted mechanically for taming.
+   The proof should verify:
+   - no execution dispatch occurs past the configured budget cap
+   - the workflow enters the expected paused/escalated state when the breaker trips
+   - both controls are observable on the execution timeline
+
+10. Make the public proof legible.
    Write the explanation in a way that can later become:
    - README proof section
    - demo narration
    - Issue `#10164` comment
 
-8. Keep the proof tied to the wedge.
+11. Keep the proof tied to the wedge.
    Do not broaden this session into:
    - full marketplace claims
    - hosted dashboard UX
    - broad lifecycle features
    - full certification suite design
-   Focus only on cron durability as the strongest public answer to the founder pain.
+   Focus on cron durability plus the minimum taming proofs needed to answer the founder pain.
 
-9. Record the exact source of truth.
+12. Record the exact source of truth.
    End the session with a clear statement that:
    - trigger timing is owned by Temporal Schedule
    - execution truth is owned by Temporal history
    - OpenClaw's own session files are not the recovery authority
 
-10. Use this done definition.
-   Session 3 is complete when you can describe one cron durability test that is simultaneously:
+13. Use this done definition.
+   Session 3 is complete when you can describe:
+   - one cron durability test
+   - one budget-cap enforcement test
+   - one circuit-breaker test
+   and all three are simultaneously:
    - an engineering proof
    - a certification case
-   - a believable public demo
+   - a believable public demo of taming, not just survival
 
 ### Session 4: Skill Durability Mapping
 

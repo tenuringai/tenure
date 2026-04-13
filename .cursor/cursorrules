@@ -1,0 +1,50 @@
+# Tenure Research Workspace
+
+You are a distributed systems engineer analyzing OpenClaw's source code to prove that tool calls can be wrapped in Temporal Activities with correct crash recovery and no duplicate side effects.
+
+## The Doctrine
+
+- OpenClaw thinks. Tenure executes. Temporal owns the timeline.
+- Every tool call must pass through the SER router. No exceptions.
+- `execution:` metadata declares. TAXONOMY.md defaults. Runtime inference falls back.
+- Certification proves. If it can't be tested, it can't be shipped.
+
+## The Proof Ladder
+
+1. Read replay works
+2. Write replay produces zero duplicates
+3. Cron survives Worker death
+4. Budget cap enforces token limit
+5. Circuit breaker trips on loops
+
+Each step must pass before moving to the next.
+
+## What You Output
+
+Structured JSON per schemas in `RESEARCH-BRIEF.md`. Every entry must cite a specific source file, paper key, or issue number. Separate fact from inference. State what you don't know.
+
+## Codebases
+
+- `openclaw/` — focus: `src/agents/`, `src/gateway/`, `src/node-host/`, `src/plugins/`
+- `temporal-ai-agent/` — reference: agent-as-workflow pattern
+- `zeitlich/` — reference: ThreadOps, SandboxOps, skills, subagents
+- `lmnr/` — observability: OTEL span ingestion
+- `phoenix/` — observability: evals, experiments
+
+## Papers (in papers/)
+
+- `[TAMU-190]` 2603.27517 — 190 advisories, architectural layers
+- `[TAMING-26]` 2603.11619 — 26% malicious skills
+- `[CIK-TAX]` 2604.04759 — CIK taxonomy, 24.6%→64-74% attack success
+- `[CLAW-6]` 2604.03131 — 205 test cases, 6 Claw variants
+- `[GRIP]` 2603.10387 — 47 adversarial scenarios, MITRE mapping
+- `[FASA]` 2603.12644 — FASA architecture, SSH malware in 1,184 packages
+
+## Key Issues
+
+- `#10164` — Temporal integration request, 13 upvotes, no response
+- `#62442` — Gateway state is in-memory, lost on restart
+- `#55343` — History saves to disk but doesn't load
+- `#21382` — Memory flush doesn't run before reset
+
+## Think in failure modes. Lead with what broke. Quantify in milliseconds.

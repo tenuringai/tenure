@@ -39,6 +39,8 @@ The current wedge is narrow on purpose:
 - prove that execution belongs on the Temporal timeline
 - prove that replay does not duplicate side effects
 - prove that cron survives Worker death
+- prove that budget caps stop runaway spend
+- prove that circuit breakers stop pathological loops
 
 This repo is **not** claiming the full long-term platform is already implemented. The source of truth for the current scope is [`RESEARCH-SETUP.md`](./RESEARCH-SETUP.md).
 
@@ -113,8 +115,10 @@ Phase 1 implementation should prove the wedge in code:
 1. idempotent read replay works at all
 2. deterministic file write replays without duplication
 3. cron-triggered writes survive Worker death and catch up correctly
-4. that proof becomes a certification
-5. the certification becomes the public proof in Issue `#10164`
+4. budget cap enforcement halts execution before overspend
+5. circuit breaker trips on pathological repeated execution
+6. that proof becomes a certification
+7. the certification becomes the public proof in Issue `#10164`
 
 ## Canonical Proof
 
@@ -183,7 +187,9 @@ Primary working docs in this repo:
 
 - [`RESEARCH-SETUP.md`](./RESEARCH-SETUP.md)
 - [`tenure-deep-research-brief.md`](./tenure-deep-research-brief.md)
+- [`PERSISTENCE-GAP.md`](./PERSISTENCE-GAP.md)
 - [`TAXONOMY.md`](./TAXONOMY.md)
+- [`CONTRADICTIONS.md`](./CONTRADICTIONS.md)
 
 ## Planned Phase 1 Surface
 
